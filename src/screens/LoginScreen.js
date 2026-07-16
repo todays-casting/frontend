@@ -6,10 +6,11 @@ import {
   TouchableOpacity,
   ImageBackground,
   StyleSheet,
-  SafeAreaView,
+  ScrollView,
   StatusBar,
   useWindowDimensions,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 
 const BASE_WIDTH = 393;
@@ -32,10 +33,11 @@ const COPY = {
 
 export default function LoginScreen({ navigation }) {
   const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const [id, setId] = useState("");
   const [password, setPassword] = useState("");
   const [secure, setSecure] = useState(true);
-  const styles = createStyles(width, height);
+  const styles = createStyles(width, height, insets);
   const scale = Math.min(width / BASE_WIDTH, height / BASE_HEIGHT);
   const iconSize = (value) => value * scale;
 
@@ -55,8 +57,13 @@ export default function LoginScreen({ navigation }) {
         translucent
       />
 
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.container}>
+      <ScrollView
+        style={styles.safeArea}
+        contentContainerStyle={styles.container}
+        contentInsetAdjustmentBehavior="automatic"
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
           <View style={styles.brandArea}>
             <MaterialCommunityIcons
               name="movie-open-star-outline"
@@ -168,18 +175,16 @@ export default function LoginScreen({ navigation }) {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
-      </SafeAreaView>
+      </ScrollView>
     </ImageBackground>
   );
 }
 
-const createStyles = (screenWidth, screenHeight) => {
-  const sx = screenWidth / BASE_WIDTH;
-  const sy = screenHeight / BASE_HEIGHT;
-  const ms = (value) => value * sx;
-  const vs = (value) => value * sy;
-  const fs = (value) => value * Math.min(sx, sy);
+const createStyles = (screenWidth, screenHeight, insets) => {
+  const scale = Math.min(Math.max(screenWidth / BASE_WIDTH, 0.82), 1.15);
+  const ms = (value) => value * scale;
+  const vs = ms;
+  const fs = ms;
 
   return StyleSheet.create({
   background: {
@@ -194,10 +199,11 @@ const createStyles = (screenWidth, screenHeight) => {
   },
 
   container: {
-    flex: 1,
+    flexGrow: 1,
+    minHeight: screenHeight,
     paddingHorizontal: ms(32),
-    paddingTop: vs(74),
-    paddingBottom: vs(29),
+    paddingTop: Math.max(insets.top, ms(20)) + ms(38),
+    paddingBottom: Math.max(insets.bottom, ms(16)),
   },
 
   brandArea: {

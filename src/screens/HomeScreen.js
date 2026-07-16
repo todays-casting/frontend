@@ -2,21 +2,27 @@ import React from "react";
 import {
   View,
   Text,
-  Image,
   ImageBackground,
-  SafeAreaView,
+  ScrollView,
   StatusBar,
   StyleSheet,
   TouchableOpacity,
-  Dimensions,
+  useWindowDimensions,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import Svg, {
+  ClipPath,
+  Defs,
+  Image as SvgImage,
+  Line,
+  Path,
+  Rect,
+} from "react-native-svg";
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
-const sx = SCREEN_WIDTH / 393;
-const sy = SCREEN_HEIGHT / 824;
-const ms = (value) => value * Math.min(sx, sy);
-const vs = (value) => value * sy;
+const CARD_PATH =
+  "M31 1 H174 C179 14 188 21 202 21 C216 21 225 14 230 1 H373 C383 1 390 8 390 18 C399 19 404 26 404 36 V555 C404 565 398 571 388 571 C388 579 381 583 372 583 H32 C23 583 16 579 16 571 C6 571 0 565 0 555 V36 C0 26 6 20 14 18 C14 8 21 1 31 1 Z";
+const STAGE_IMAGE = require("../../assets/images/home_stage.png");
 
 const COPY = {
   hello: "\uC548\uB155\uD558\uC138\uC694, \uC11C\uC5F0\uB2D8 \uD83D\uDC4B",
@@ -30,6 +36,10 @@ const COPY = {
 };
 
 export default function HomeScreen({ navigation }) {
+  const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const responsive = createStyles(width, height, insets);
+  const { styles } = responsive;
   const goInput = () => {
     navigation?.navigate?.("Input");
   };
@@ -46,10 +56,16 @@ export default function HomeScreen({ navigation }) {
         translucent
       />
 
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.container}>
+      <ScrollView
+        style={styles.safeArea}
+        contentContainerStyle={styles.container}
+        contentInsetAdjustmentBehavior="automatic"
+        scrollEnabled={false}
+        bounces={false}
+        showsVerticalScrollIndicator={false}
+      >
           <View style={styles.header}>
-            <View>
+            <View style={styles.headerText}>
               <Text style={styles.greeting}>{COPY.hello}</Text>
               <Text style={styles.question}>{COPY.question}</Text>
             </View>
@@ -61,7 +77,52 @@ export default function HomeScreen({ navigation }) {
           </View>
 
           <View style={styles.card}>
-            <View style={styles.topNotch} />
+            <Svg
+              width="100%"
+              height="100%"
+              viewBox="0 0 404 584"
+              preserveAspectRatio="none"
+              style={styles.cardArtwork}
+            >
+              <Defs>
+                <ClipPath id="homeCardClip">
+                  <Path d={CARD_PATH} />
+                </ClipPath>
+              </Defs>
+
+              <SvgImage
+                href={STAGE_IMAGE}
+                x="0"
+                y="0"
+                width="404"
+                height="584"
+                preserveAspectRatio="xMidYMid slice"
+                clipPath="url(#homeCardClip)"
+              />
+              <Rect
+                x="0"
+                y="512"
+                width="404"
+                height="72"
+                fill="rgba(37, 17, 62, 0.96)"
+                clipPath="url(#homeCardClip)"
+              />
+              <Line
+                x1="0"
+                y1="512"
+                x2="404"
+                y2="512"
+                stroke="rgba(255, 174, 105, 0.72)"
+                strokeWidth="1"
+              />
+              <Path
+                d={CARD_PATH}
+                fill="none"
+                stroke="#E9AD62"
+                strokeWidth="1.4"
+                vectorEffect="non-scaling-stroke"
+              />
+            </Svg>
 
             <View style={styles.cardTextArea}>
               <Text style={styles.cardEyebrow}>{COPY.cardEyebrow}</Text>
@@ -70,7 +131,7 @@ export default function HomeScreen({ navigation }) {
               <View style={styles.promptRow}>
                 <MaterialCommunityIcons
                   name="note-edit-outline"
-                  size={25}
+                  size={responsive.promptIconSize}
                   color="#FFAC66"
                 />
                 <Text style={styles.cardPrompt}>{COPY.cardPrompt}</Text>
@@ -79,29 +140,53 @@ export default function HomeScreen({ navigation }) {
               <Text style={styles.cardHelp}>{COPY.cardHelp}</Text>
             </View>
 
-            <Image
-              source={require("../../assets/images/home_stage.png")}
-              style={styles.stageImage}
-              resizeMode="cover"
-            />
-
             <TouchableOpacity
               activeOpacity={0.88}
               style={styles.ctaButton}
               onPress={goInput}
             >
-              <MaterialCommunityIcons name="pencil" size={25} color="#FFBF80" />
+              <MaterialCommunityIcons
+                name="pencil"
+                size={responsive.ctaIconSize}
+                color="#FFBF80"
+              />
               <Text style={styles.ctaText}>{COPY.cta}</Text>
-              <Ionicons name="arrow-forward" size={27} color="#FFBF80" />
+              <Ionicons
+                name="arrow-forward"
+                size={responsive.arrowIconSize}
+                color="#FFBF80"
+              />
             </TouchableOpacity>
           </View>
-        </View>
-      </SafeAreaView>
+      </ScrollView>
     </ImageBackground>
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (screenWidth, screenHeight, insets) => {
+  const scale = Math.min(Math.max(screenWidth / 393, 0.82), 1.15);
+  const ms = (value) => value * scale;
+  const vs = ms;
+  const cardHorizontalMargin = ms(13);
+  const topPadding = Math.max(insets.top, ms(16)) + ms(20);
+  const headerHeight = ms(69);
+  const headerGap = ms(20);
+  const bottomClearance = 132 + Math.max(insets.bottom, ms(16));
+  const cardRatio = 584 / 404;
+  const availableCardHeight = Math.max(
+    120,
+    screenHeight - topPadding - headerHeight - headerGap - bottomClearance
+  );
+  const cardWidth = Math.min(
+    screenWidth - cardHorizontalMargin * 2,
+    availableCardHeight / cardRatio
+  );
+  const cardHeight = cardWidth * cardRatio;
+  const cardScale = cardWidth / 367;
+  const cs = (value) => value * cardScale;
+  const ctaHeight = cardHeight * (72 / 584);
+
+  const styles = StyleSheet.create({
   background: {
     flex: 1,
     width: "100%",
@@ -114,17 +199,22 @@ const styles = StyleSheet.create({
   },
 
   container: {
-    flex: 1,
-    paddingHorizontal: ms(27),
-    paddingTop: vs(78),
-    paddingBottom: vs(184),
+    flexGrow: 1,
+    paddingHorizontal: cardHorizontalMargin,
+    paddingTop: topPadding,
+    paddingBottom: bottomClearance,
   },
 
   header: {
     flexDirection: "row",
     alignItems: "flex-start",
     justifyContent: "space-between",
-    marginBottom: vs(35),
+    minHeight: headerHeight,
+    marginBottom: headerGap,
+  },
+  headerText: {
+    flex: 1,
+    paddingRight: ms(8),
   },
 
   greeting: {
@@ -161,34 +251,22 @@ const styles = StyleSheet.create({
   },
 
   card: {
-    height: vs(470),
-    borderWidth: ms(1.4),
-    borderColor: "#FFB66F",
-    borderRadius: ms(32),
-    backgroundColor: "rgba(28, 14, 55, 0.9)",
-    overflow: "hidden",
+    width: cardWidth,
+    height: cardHeight,
+    position: "relative",
+    alignSelf: "center",
   },
 
-  topNotch: {
+  cardArtwork: {
     position: "absolute",
-    top: -ms(18),
-    alignSelf: "center",
-    width: ms(86),
-    height: ms(36),
-    borderBottomLeftRadius: ms(43),
-    borderBottomRightRadius: ms(43),
-    borderWidth: ms(1.4),
-    borderTopWidth: 0,
-    borderColor: "#FFB66F",
-    backgroundColor: "rgba(28, 14, 55, 0.96)",
-    zIndex: 2,
+    inset: 0,
   },
 
   cardTextArea: {
     position: "absolute",
-    top: vs(56),
-    left: ms(18),
-    right: ms(18),
+    top: cardHeight * 0.095,
+    left: cs(18),
+    right: cs(18),
     alignItems: "center",
     zIndex: 2,
   },
@@ -196,51 +274,42 @@ const styles = StyleSheet.create({
   cardEyebrow: {
     color: "#FFD18F",
     fontFamily: "MaruBuriSemiBold",
-    fontSize: ms(15),
-    lineHeight: ms(22),
+    fontSize: cs(14),
+    lineHeight: cs(22),
     letterSpacing: 0,
   },
 
   cardTitle: {
-    marginTop: vs(18),
+    marginTop: cardHeight * 0.025,
     color: "#FFD4A1",
     fontFamily: "MaruBuriSemiBold",
-    fontSize: ms(31),
-    lineHeight: ms(48),
+    fontSize: cs(30),
+    lineHeight: cs(43),
     textAlign: "center",
   },
 
   promptRow: {
-    marginTop: vs(25),
+    marginTop: cardHeight * 0.035,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
   },
 
   cardPrompt: {
-    marginLeft: ms(9),
+    marginLeft: cs(9),
     color: "#FFB16C",
     fontFamily: "NanumSquareNeo",
-    fontSize: ms(16),
-    lineHeight: ms(23),
+    fontSize: cs(16),
+    lineHeight: cs(23),
   },
 
   cardHelp: {
-    marginTop: vs(10),
+    marginTop: cs(10),
     color: "rgba(255, 255, 255, 0.76)",
     fontFamily: "NanumSquareNeo",
-    fontSize: ms(13),
-    lineHeight: ms(21),
+    fontSize: cs(13),
+    lineHeight: cs(21),
     textAlign: "center",
-  },
-
-  stageImage: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: vs(66),
-    width: "100%",
   },
 
   ctaButton: {
@@ -248,20 +317,25 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    height: vs(66),
-    borderTopWidth: 1,
-    borderTopColor: "rgba(255, 166, 99, 0.6)",
-    backgroundColor: "rgba(42, 20, 64, 0.94)",
+    height: ctaHeight,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
   },
 
   ctaText: {
-    marginHorizontal: ms(14),
+    marginHorizontal: cs(14),
     color: "#FFBF80",
     fontFamily: "NanumSquareNeo",
-    fontSize: ms(21),
-    lineHeight: ms(30),
+    fontSize: cs(20),
+    lineHeight: cs(30),
   },
-});
+  });
+
+  return {
+    styles,
+    promptIconSize: Math.max(14, cs(23)),
+    ctaIconSize: Math.max(14, cs(23)),
+    arrowIconSize: Math.max(15, cs(25)),
+  };
+};

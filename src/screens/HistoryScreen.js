@@ -4,7 +4,6 @@ import {
   Dimensions,
   Image,
   ImageBackground,
-  SafeAreaView,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -12,13 +11,13 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
-const sx = SCREEN_WIDTH / 393;
-const sy = SCREEN_HEIGHT / 824;
-const ms = (value) => value * Math.min(sx, sy);
-const vs = (value) => value * sy;
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
+const scale = Math.min(Math.max(SCREEN_WIDTH / 393, 0.82), 1.15);
+const ms = (value) => value * scale;
+const vs = ms;
 
 const CARD_WIDTH = ms(250);
 const CARD_GAP = -ms(104);
@@ -201,10 +200,15 @@ export default function HistoryScreen() {
         translucent
       />
 
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.content}>
+      <SafeAreaView style={styles.safeArea} edges={["top", "left", "right"]}>
+        <ScrollView
+          style={styles.screenScroll}
+          contentContainerStyle={styles.content}
+          contentInsetAdjustmentBehavior="automatic"
+          showsVerticalScrollIndicator={false}
+        >
           <View style={styles.header}>
-            <View>
+            <View style={styles.headerText}>
               <Text style={styles.title}>히스토리 조회</Text>
               <Text style={styles.subtitle}>
                 지난간 하루의 기록을 다시 살펴보세요.
@@ -321,7 +325,7 @@ export default function HistoryScreen() {
               />
             ))}
           </View>
-        </View>
+        </ScrollView>
       </SafeAreaView>
     </ImageBackground>
   );
@@ -472,8 +476,11 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
   },
-  content: {
+  screenScroll: {
     flex: 1,
+  },
+  content: {
+    flexGrow: 1,
     paddingTop: vs(62),
     paddingBottom: vs(142),
   },
@@ -482,6 +489,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
+  },
+  headerText: {
+    flex: 1,
+    paddingRight: ms(8),
   },
   title: {
     color: "#FFD4A1",
