@@ -27,11 +27,23 @@ const COPY = {
   cardHelp:
     "AI\uAC00 \uB2F9\uC2E0\uC5D0\uAC8C \uC5B4\uC6B8\uB9AC\uB294 \uBC30\uC5ED\uC744 \uCC3E\uC544\uC918\uC694.",
   cta: "\uC9C0\uAE08 \uAE30\uB85D\uD558\uAE30",
+  resultEyebrow: "\u2726  CASTING RESULT  \u2726",
+  resultTitle: "\uB530\uB73B\uD55C \uBC24\uC758\n\uC8FC\uC778\uACF5",
+  resultGenre: "\uC624\uB298\uC758 \uC7A5\uB974",
+  resultGenreText: "Romance Drama",
+  resultRole: "\uC624\uB298\uC758 \uBC30\uC5ED",
+  resultRoleText: "\uC870\uC6A9\uD788 \uBE5B\uB098\uB294 \uC8FC\uC778\uACF5",
+  resultLine: "\uD55C\uC904 \uCE90\uC2A4\uD305",
+  resultLineText:
+    "\uC791\uC740 \uC9C4\uC2EC\uC774 \uD558\uB8E8\uB97C \uB530\uB73B\uD558\uAC8C \uBC14\uAFB8\uB294 \uC7A5\uBA74.",
+  resultCta: "\uACB0\uACFC \uCE74\uB4DC \uBCF4\uAE30",
 };
 
-export default function HomeScreen({ navigation }) {
+export default function HomeScreen({ navigation, route }) {
+  const showResult = route?.params?.showResult;
+
   const goInput = () => {
-    navigation?.navigate?.("Input");
+    navigation?.navigate?.("DailyRecord");
   };
 
   return (
@@ -60,44 +72,112 @@ export default function HomeScreen({ navigation }) {
             </TouchableOpacity>
           </View>
 
-          <View style={styles.card}>
-            <View style={styles.topNotch} />
-
-            <View style={styles.cardTextArea}>
-              <Text style={styles.cardEyebrow}>{COPY.cardEyebrow}</Text>
-              <Text style={styles.cardTitle}>{COPY.cardTitle}</Text>
-
-              <View style={styles.promptRow}>
-                <MaterialCommunityIcons
-                  name="note-edit-outline"
-                  size={25}
-                  color="#FFAC66"
-                />
-                <Text style={styles.cardPrompt}>{COPY.cardPrompt}</Text>
-              </View>
-
-              <Text style={styles.cardHelp}>{COPY.cardHelp}</Text>
-            </View>
-
-            <Image
-              source={require("../../assets/images/home_stage.png")}
-              style={styles.stageImage}
-              resizeMode="cover"
-            />
-
-            <TouchableOpacity
-              activeOpacity={0.88}
-              style={styles.ctaButton}
-              onPress={goInput}
-            >
-              <MaterialCommunityIcons name="pencil" size={25} color="#FFBF80" />
-              <Text style={styles.ctaText}>{COPY.cta}</Text>
-              <Ionicons name="arrow-forward" size={27} color="#FFBF80" />
-            </TouchableOpacity>
-          </View>
+          {showResult ? (
+            <ResultCard navigation={navigation} />
+          ) : (
+            <PromptCard onPress={goInput} />
+          )}
         </View>
       </SafeAreaView>
     </ImageBackground>
+  );
+}
+
+function PromptCard({ onPress }) {
+  return (
+    <View style={styles.card}>
+      <View style={styles.topNotch} />
+
+      <View style={styles.cardTextArea}>
+        <Text style={styles.cardEyebrow}>{COPY.cardEyebrow}</Text>
+        <Text style={styles.cardTitle}>{COPY.cardTitle}</Text>
+
+        <View style={styles.promptRow}>
+          <MaterialCommunityIcons
+            name="note-edit-outline"
+            size={25}
+            color="#FFAC66"
+          />
+          <Text style={styles.cardPrompt}>{COPY.cardPrompt}</Text>
+        </View>
+
+        <Text style={styles.cardHelp}>{COPY.cardHelp}</Text>
+      </View>
+
+      <Image
+        source={require("../../assets/images/home_stage.png")}
+        style={styles.stageImage}
+        resizeMode="cover"
+      />
+
+      <TouchableOpacity activeOpacity={0.88} style={styles.ctaButton} onPress={onPress}>
+        <MaterialCommunityIcons name="pencil" size={25} color="#FFBF80" />
+        <Text style={styles.ctaText}>{COPY.cta}</Text>
+        <Ionicons name="arrow-forward" size={27} color="#FFBF80" />
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function ResultCard({ navigation }) {
+  return (
+    <View style={[styles.card, styles.resultCard]}>
+      <View style={styles.topNotch} />
+      <Image
+        source={require("../../assets/images/home_stage.png")}
+        style={styles.stageImage}
+        resizeMode="cover"
+      />
+      <View style={styles.resultShade} />
+
+      <View style={styles.resultHeader}>
+        <Text style={styles.cardEyebrow}>{COPY.resultEyebrow}</Text>
+        <Text style={styles.resultTitle}>{COPY.resultTitle}</Text>
+      </View>
+
+      <View style={styles.resultInfoPanel}>
+        <ResultRow
+          icon="movie-open-outline"
+          label={COPY.resultGenre}
+          text={COPY.resultGenreText}
+        />
+        <ResultRow
+          icon="account-star-outline"
+          label={COPY.resultRole}
+          text={COPY.resultRoleText}
+        />
+        <ResultRow
+          icon="format-quote-close"
+          label={COPY.resultLine}
+          text={COPY.resultLineText}
+          last
+        />
+      </View>
+
+      <TouchableOpacity
+        activeOpacity={0.88}
+        style={styles.ctaButton}
+        onPress={() => navigation?.navigate?.("History")}
+      >
+        <MaterialCommunityIcons name="cards-heart-outline" size={25} color="#FFBF80" />
+        <Text style={styles.ctaText}>{COPY.resultCta}</Text>
+        <Ionicons name="arrow-forward" size={27} color="#FFBF80" />
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function ResultRow({ icon, label, text, last }) {
+  return (
+    <View style={[styles.resultRow, last && styles.lastResultRow]}>
+      <View style={styles.resultIcon}>
+        <MaterialCommunityIcons name={icon} size={ms(21)} color="#FFB363" />
+      </View>
+      <View style={styles.resultTextWrap}>
+        <Text style={styles.resultLabel}>{label}</Text>
+        <Text style={styles.resultText}>{text}</Text>
+      </View>
+    </View>
   );
 }
 
@@ -263,5 +343,88 @@ const styles = StyleSheet.create({
     fontFamily: "NanumSquareNeo",
     fontSize: ms(21),
     lineHeight: ms(30),
+  },
+
+  resultCard: {
+    backgroundColor: "rgba(28, 14, 55, 0.94)",
+  },
+
+  resultShade: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(17, 7, 37, 0.28)",
+  },
+
+  resultHeader: {
+    position: "absolute",
+    top: vs(45),
+    left: ms(18),
+    right: ms(18),
+    alignItems: "center",
+    zIndex: 2,
+  },
+
+  resultTitle: {
+    marginTop: vs(16),
+    color: "#FFD4A1",
+    fontFamily: "MaruBuriSemiBold",
+    fontSize: ms(31),
+    lineHeight: ms(44),
+    textAlign: "center",
+  },
+
+  resultInfoPanel: {
+    position: "absolute",
+    left: ms(18),
+    right: ms(18),
+    bottom: vs(82),
+    paddingHorizontal: ms(13),
+    paddingVertical: vs(8),
+    borderRadius: ms(14),
+    borderWidth: 1,
+    borderColor: "rgba(238, 102, 63, 0.55)",
+    backgroundColor: "rgba(35, 18, 46, 0.88)",
+    zIndex: 3,
+  },
+
+  resultRow: {
+    minHeight: vs(47),
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(235, 167, 126, 0.18)",
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
+  lastResultRow: {
+    borderBottomWidth: 0,
+  },
+
+  resultIcon: {
+    width: ms(34),
+    height: ms(34),
+    borderRadius: ms(17),
+    borderWidth: 1,
+    borderColor: "rgba(238, 102, 63, 0.28)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  resultTextWrap: {
+    flex: 1,
+    marginLeft: ms(11),
+  },
+
+  resultLabel: {
+    color: "#FFAB5D",
+    fontFamily: "NanumSquareNeo",
+    fontSize: ms(11),
+    lineHeight: ms(16),
+  },
+
+  resultText: {
+    marginTop: vs(2),
+    color: "#F7DABD",
+    fontFamily: "NanumSquareNeo",
+    fontSize: ms(12),
+    lineHeight: ms(18),
   },
 });

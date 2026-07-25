@@ -6,24 +6,18 @@ import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import HomeScreen from "../screens/HomeScreen";
 import CalendarScreen from "../screens/CalendarScreen";
 import HistoryScreen from "../screens/HistoryScreen";
+import DailyRecordScreen from "../screens/DailyRecordScreen";
+import MyPageScreen from "../screens/MyPageScreen";
 
 const Tab = createBottomTabNavigator();
 
 const TAB_LABELS = {
   Home: "\uD648",
   Calendar: "\uB2EC\uB825",
-  Input: "\uC785\uB825",
+  DailyRecord: "\uC785\uB825",
   History: "\uD788\uC2A4\uD1A0\uB9AC",
   MyPage: "\uB9C8\uC774\uD398\uC774\uC9C0",
 };
-
-function EmptyScreen() {
-  return (
-    <View style={styles.emptyScreen}>
-      <Text style={styles.emptyText}>Coming soon</Text>
-    </View>
-  );
-}
 
 function TabIcon({ routeName, focused }) {
   const color = focused ? "#FFC17B" : "rgba(255, 255, 255, 0.62)";
@@ -73,7 +67,7 @@ function CustomTabBar({ state, descriptors, navigation }) {
             }
           };
 
-          if (route.name === "Input") {
+          if (route.name === "DailyRecord") {
             return (
               <TouchableOpacity
                 key={route.key}
@@ -92,7 +86,7 @@ function CustomTabBar({ state, descriptors, navigation }) {
                   />
                   <Text style={styles.centerSparkle}>{"\u2726"}</Text>
                 </View>
-                <Text style={styles.centerLabel}>{TAB_LABELS.Input}</Text>
+                <Text style={styles.centerLabel}>{TAB_LABELS.DailyRecord}</Text>
               </TouchableOpacity>
             );
           }
@@ -136,27 +130,14 @@ export default function BottomTabNavigator() {
     >
       <Tab.Screen name="Home" component={HomeScreen} />
       <Tab.Screen name="Calendar" component={CalendarScreen} />
-      <Tab.Screen name="Input" component={EmptyScreen} />
+      <Tab.Screen name="DailyRecord" component={DailyRecordScreen} />
       <Tab.Screen name="History" component={HistoryScreen} />
-      <Tab.Screen name="MyPage" component={EmptyScreen} />
+      <Tab.Screen name="MyPage" component={MyPageScreen} />
     </Tab.Navigator>
   );
 }
 
 const styles = StyleSheet.create({
-  emptyScreen: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#160E2A",
-  },
-
-  emptyText: {
-    color: "#FFFFFF",
-    fontFamily: "NanumSquareNeo",
-    fontSize: 18,
-  },
-
   tabBarWrap: {
     position: "absolute",
     left: 0,
