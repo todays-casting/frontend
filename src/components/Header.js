@@ -1,9 +1,11 @@
 import { View, Text, StyleSheet } from "react-native";
 import colors from "../styles/colors";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export default function Header({ title = "Casting" }) {
+  const insets = useSafeAreaInsets();
   return (
-    <View style={styles.header}>
+    <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
       <Text style={styles.logo}>Casting</Text>
       <Text style={styles.title}>{title}</Text>
     </View>
@@ -12,8 +14,7 @@ export default function Header({ title = "Casting" }) {
 
 const styles = StyleSheet.create({
   header: {
-    height: 90,
-    paddingTop: 42,
+    minHeight: 64,
     paddingHorizontal: 20,
     backgroundColor: colors.beige,
     borderBottomWidth: 1,

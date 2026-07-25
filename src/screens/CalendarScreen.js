@@ -4,7 +4,6 @@ import {
   Image,
   ImageBackground,
   Modal,
-  SafeAreaView,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -13,13 +12,13 @@ import {
   View,
   Dimensions,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
-const sx = SCREEN_WIDTH / 393;
-const sy = SCREEN_HEIGHT / 824;
-const ms = (value) => value * Math.min(sx, sy);
-const vs = (value) => value * sy;
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
+const scale = Math.min(Math.max(SCREEN_WIDTH / 393, 0.82), 1.15);
+const ms = (value) => value * scale;
+const vs = ms;
 
 const DAYS = ["일", "월", "화", "수", "목", "금", "토"];
 const CALENDAR_DAYS = [
@@ -150,10 +149,12 @@ export default function CalendarScreen() {
       <SafeAreaView style={styles.safeArea}>
         <ScrollView
           contentContainerStyle={styles.content}
+          contentInsetAdjustmentBehavior="automatic"
           showsVerticalScrollIndicator={false}
+          showsHorizontalScrollIndicator={false}
         >
           <View style={styles.header}>
-            <View>
+            <View style={styles.headerText}>
               <Text style={styles.greeting}>안녕하세요, 서연님 👋</Text>
               <Text style={styles.subGreeting}>
                 하루를 기록하고, 나의 이야기를 쌓아보세요
@@ -427,6 +428,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
+  },
+  headerText: {
+    flex: 1,
+    paddingRight: ms(10),
   },
   greeting: {
     color: "#D8AD7B",

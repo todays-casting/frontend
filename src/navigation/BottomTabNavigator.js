@@ -2,6 +2,7 @@ import React from "react";
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import HomeScreen from "../screens/HomeScreen";
 import CalendarScreen from "../screens/CalendarScreen";
@@ -48,9 +49,23 @@ function TabIcon({ routeName, focused }) {
 }
 
 function CustomTabBar({ state, descriptors, navigation }) {
+  const insets = useSafeAreaInsets();
+
   return (
-    <View style={styles.tabBarWrap} pointerEvents="box-none">
-      <View style={styles.tabBar}>
+    <View
+      style={[styles.tabBarWrap, { height: 132 + insets.bottom }]}
+      pointerEvents="box-none"
+    >
+      <View
+        style={[
+          styles.tabBar,
+          {
+            height: 116 + insets.bottom,
+            paddingTop: 22,
+            paddingBottom: Math.max(insets.bottom, 16),
+          },
+        ]}
+      >
         {state.routes.map((route, index) => {
           const focused = state.index === index;
           const { options } = descriptors[route.key];
@@ -86,7 +101,14 @@ function CustomTabBar({ state, descriptors, navigation }) {
                   />
                   <Text style={styles.centerSparkle}>{"\u2726"}</Text>
                 </View>
-                <Text style={styles.centerLabel}>{TAB_LABELS.DailyRecord}</Text>
+                <Text
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.8}
+                  style={styles.centerLabel}
+                >
+                  {TAB_LABELS.Input}
+                </Text>
               </TouchableOpacity>
             );
           }
@@ -104,6 +126,8 @@ function CustomTabBar({ state, descriptors, navigation }) {
               <TabIcon routeName={route.name} focused={focused} />
               <Text
                 numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.7}
                 style={[styles.tabLabel, focused && styles.activeLabel]}
               >
                 {TAB_LABELS[route.name]}
@@ -155,7 +179,7 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     height: 125,
-    paddingHorizontal: 22,
+    paddingHorizontal: 0,
     paddingTop: 29,
     paddingBottom: 15,
     borderTopLeftRadius: 38,
@@ -175,7 +199,8 @@ const styles = StyleSheet.create({
   },
 
   tabItem: {
-    width: 62,
+    flex: 1,
+    minWidth: 0,
     alignItems: "center",
   },
 
@@ -183,7 +208,7 @@ const styles = StyleSheet.create({
     marginTop: 9,
     color: "rgba(255, 255, 255, 0.62)",
     fontFamily: "NanumSquareNeo",
-    fontSize: 13,
+    fontSize: 11,
     lineHeight: 21,
   },
 
@@ -192,7 +217,8 @@ const styles = StyleSheet.create({
   },
 
   centerTab: {
-    width: 70,
+    flex: 1,
+    minWidth: 0,
     alignItems: "center",
     marginTop: -43,
   },
