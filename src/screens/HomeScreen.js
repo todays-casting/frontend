@@ -45,11 +45,12 @@ const COPY = {
   resultCta: "\uACB0\uACFC \uCE74\uB4DC \uBCF4\uAE30",
 };
 
-export default function HomeScreen({ navigation }) {
+export default function HomeScreen({ navigation, route }) {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const responsive = createStyles(width, height, insets);
   const { styles } = responsive;
+  const showResult = route?.params?.showResult;
   const goInput = () => {
     navigation?.navigate?.("DailyRecord");
   };
@@ -134,20 +135,47 @@ export default function HomeScreen({ navigation }) {
               />
             </Svg>
 
-      <View style={styles.cardTextArea}>
-        <Text style={styles.cardEyebrow}>{COPY.cardEyebrow}</Text>
-        <Text style={styles.cardTitle}>{COPY.cardTitle}</Text>
+            <View style={styles.cardTextArea}>
+              <Text style={styles.cardEyebrow}>
+                {showResult ? COPY.resultEyebrow : COPY.cardEyebrow}
+              </Text>
+              <Text style={styles.cardTitle}>
+                {showResult ? COPY.resultTitle : COPY.cardTitle}
+              </Text>
 
-              <View style={styles.promptRow}>
-                <MaterialCommunityIcons
-                  name="note-edit-outline"
-                  size={responsive.promptIconSize}
-                  color="#FFAC66"
-                />
-                <Text style={styles.cardPrompt}>{COPY.cardPrompt}</Text>
-              </View>
+              {showResult ? (
+                <View style={styles.resultPanel}>
+                  <ResultLine
+                    styles={styles}
+                    label={COPY.resultGenre}
+                    value={COPY.resultGenreText}
+                  />
+                  <ResultLine
+                    styles={styles}
+                    label={COPY.resultRole}
+                    value={COPY.resultRoleText}
+                  />
+                  <ResultLine
+                    styles={styles}
+                    label={COPY.resultLine}
+                    value={COPY.resultLineText}
+                    last
+                  />
+                </View>
+              ) : (
+                <>
+                  <View style={styles.promptRow}>
+                    <MaterialCommunityIcons
+                      name="note-edit-outline"
+                      size={responsive.promptIconSize}
+                      color="#FFAC66"
+                    />
+                    <Text style={styles.cardPrompt}>{COPY.cardPrompt}</Text>
+                  </View>
 
-              <Text style={styles.cardHelp}>{COPY.cardHelp}</Text>
+                  <Text style={styles.cardHelp}>{COPY.cardHelp}</Text>
+                </>
+              )}
             </View>
 
             <TouchableOpacity
@@ -160,7 +188,9 @@ export default function HomeScreen({ navigation }) {
                 size={responsive.ctaIconSize}
                 color="#FFBF80"
               />
-              <Text style={styles.ctaText}>{COPY.cta}</Text>
+              <Text style={styles.ctaText}>
+                {showResult ? COPY.resultCta : COPY.cta}
+              </Text>
               <Ionicons
                 name="arrow-forward"
                 size={responsive.arrowIconSize}
@@ -170,6 +200,15 @@ export default function HomeScreen({ navigation }) {
           </View>
       </ScrollView>
     </ImageBackground>
+  );
+}
+
+function ResultLine({ styles, label, value, last }) {
+  return (
+    <View style={[styles.resultLineRow, last && styles.resultLineLast]}>
+      <Text style={styles.resultLabel}>{label}</Text>
+      <Text style={styles.resultValue}>{value}</Text>
+    </View>
   );
 }
 
@@ -318,6 +357,43 @@ const createStyles = (screenWidth, screenHeight, insets) => {
     color: "rgba(255, 255, 255, 0.76)",
     fontFamily: "NanumSquareNeo",
     fontSize: cs(13),
+    lineHeight: cs(21),
+    textAlign: "center",
+  },
+
+  resultPanel: {
+    width: "100%",
+    marginTop: cardHeight * 0.04,
+    borderRadius: cs(18),
+    borderWidth: 1,
+    borderColor: "rgba(255, 179, 107, 0.5)",
+    backgroundColor: "rgba(23, 12, 42, 0.72)",
+    paddingHorizontal: cs(16),
+    paddingVertical: cs(8),
+  },
+
+  resultLineRow: {
+    paddingVertical: cs(9),
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255, 211, 195, 0.15)",
+  },
+
+  resultLineLast: {
+    borderBottomWidth: 0,
+  },
+
+  resultLabel: {
+    color: "#FFB16C",
+    fontFamily: "NanumSquareNeo",
+    fontSize: cs(12),
+    lineHeight: cs(18),
+  },
+
+  resultValue: {
+    marginTop: cs(3),
+    color: "#FFE0BE",
+    fontFamily: "NanumSquareNeo",
+    fontSize: cs(14),
     lineHeight: cs(21),
     textAlign: "center",
   },

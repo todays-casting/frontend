@@ -107,7 +107,7 @@ function CustomTabBar({ state, descriptors, navigation }) {
                   minimumFontScale={0.8}
                   style={styles.centerLabel}
                 >
-                  {TAB_LABELS.Input}
+                  {TAB_LABELS.DailyRecord}
                 </Text>
               </TouchableOpacity>
             );

@@ -36,6 +36,9 @@ export default function App() {
         >
           <Stack.Screen name="Login" component={LoginScreen} />
           <Stack.Screen name="Main" component={BottomTabNavigator} />
+          <Stack.Screen name="AnalysisLoading" component={AnalysisLoadingScreen} />
+          <Stack.Screen name="Settings" component={SettingsScreen} />
+          <Stack.Screen name="Contact" component={ContactScreen} />
         </Stack.Navigator>
       </NavigationContainer>
     </SafeAreaProvider>
