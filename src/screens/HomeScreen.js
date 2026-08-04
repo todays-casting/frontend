@@ -254,7 +254,7 @@ const createStyles = (screenWidth, screenHeight, insets) => {
   const cardRatio = 584 / 404;
   const availableCardHeight = Math.max(
     120,
-    screenHeight - topPadding - headerHeight - headerGap - bottomClearance
+    screenHeight - topPadding - headerHeight - headerGap - bottomClearance - ms(4)
   );
   const cardWidth = Math.min(
     screenWidth - cardHorizontalMargin * 2,
