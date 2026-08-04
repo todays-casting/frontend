@@ -60,7 +60,7 @@ export default function AnalysisLoadingScreen({ navigation }) {
       <View style={styles.topShade} />
       <View style={styles.bottomShade} />
 
-      <SafeAreaView style={styles.safeArea} edges={["top", "left", "right"]}>
+      <SafeAreaView style={styles.safeArea} edges={["left", "right"]}>
         <TouchableOpacity
           activeOpacity={0.75}
           style={styles.backButton}

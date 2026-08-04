@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -19,6 +19,7 @@ import Svg, {
   Path,
   Rect,
 } from "react-native-svg";
+import NotificationSheet from "../components/NotificationSheet";
 
 const CARD_PATH =
   "M31 1 H174 C179 14 188 21 202 21 C216 21 225 14 230 1 H373 C383 1 390 8 390 18 C399 19 404 26 404 36 V555 C404 565 398 571 388 571 C388 579 381 583 372 583 H32 C23 583 16 579 16 571 C6 571 0 565 0 555 V36 C0 26 6 20 14 18 C14 8 21 1 31 1 Z";
@@ -42,7 +43,7 @@ const COPY = {
   resultLine: "\uD55C\uC904 \uCE90\uC2A4\uD305",
   resultLineText:
     "\uC791\uC740 \uC9C4\uC2EC\uC774 \uD558\uB8E8\uB97C \uB530\uB73B\uD558\uAC8C \uBC14\uAFB8\uB294 \uC7A5\uBA74.",
-  resultCta: "\uACB0\uACFC \uCE74\uB4DC \uBCF4\uAE30",
+  resultCta: "\uB2E4\uC2DC \uAE30\uB85D\uD558\uAE30",
 };
 
 export default function HomeScreen({ navigation, route }) {
@@ -51,6 +52,7 @@ export default function HomeScreen({ navigation, route }) {
   const responsive = createStyles(width, height, insets);
   const { styles } = responsive;
   const showResult = route?.params?.showResult;
+  const [notificationVisible, setNotificationVisible] = useState(false);
   const goInput = () => {
     navigation?.navigate?.("DailyRecord");
   };
@@ -81,7 +83,11 @@ export default function HomeScreen({ navigation, route }) {
               <Text style={styles.question}>{COPY.question}</Text>
             </View>
 
-            <TouchableOpacity activeOpacity={0.75} style={styles.bellButton}>
+            <TouchableOpacity
+              activeOpacity={0.75}
+              style={styles.bellButton}
+              onPress={() => setNotificationVisible(true)}
+            >
               <Ionicons name="notifications-outline" size={33} color="#FFD08E" />
               <View style={styles.bellDot} />
             </TouchableOpacity>
@@ -145,6 +151,25 @@ export default function HomeScreen({ navigation, route }) {
 
               {showResult ? (
                 <View style={styles.resultPanel}>
+                  <Svg
+                    width="100%"
+                    height="100%"
+                    viewBox="0 0 100 100"
+                    preserveAspectRatio="none"
+                    style={styles.resultPanelArtwork}
+                  >
+                    <Rect
+                      x="0.5"
+                      y="0.5"
+                      width="99"
+                      height="99"
+                      rx="6"
+                      ry="6"
+                      fill="rgba(23, 12, 42, 0.72)"
+                      stroke="rgba(255, 179, 107, 0.5)"
+                      strokeWidth="1"
+                    />
+                  </Svg>
                   <ResultLine
                     styles={styles}
                     label={COPY.resultGenre}
@@ -199,6 +224,11 @@ export default function HomeScreen({ navigation, route }) {
             </TouchableOpacity>
           </View>
       </ScrollView>
+
+      <NotificationSheet
+        visible={notificationVisible}
+        onClose={() => setNotificationVisible(false)}
+      />
     </ImageBackground>
   );
 }
@@ -364,12 +394,14 @@ const createStyles = (screenWidth, screenHeight, insets) => {
   resultPanel: {
     width: "100%",
     marginTop: cardHeight * 0.04,
-    borderRadius: cs(18),
-    borderWidth: 1,
-    borderColor: "rgba(255, 179, 107, 0.5)",
-    backgroundColor: "rgba(23, 12, 42, 0.72)",
+    position: "relative",
     paddingHorizontal: cs(16),
     paddingVertical: cs(8),
+    overflow: "hidden",
+  },
+
+  resultPanelArtwork: {
+    ...StyleSheet.absoluteFillObject,
   },
 
   resultLineRow: {

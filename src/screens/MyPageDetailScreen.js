@@ -1,7 +1,8 @@
 import React, { useState } from "react";
 import {
   ImageBackground,
-  SafeAreaView,
+  Linking,
+  Platform,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -12,6 +13,7 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 
 const COPY = {
@@ -41,6 +43,21 @@ const CONTACT_ROWS = [
   { icon: "create-outline", label: COPY.recordHelp },
   { icon: "albums-outline", label: COPY.cardHelp },
 ];
+
+const openContactMail = (topic) => {
+  const subject = encodeURIComponent(`[Casting] ${topic}`);
+  Linking.openURL(`mailto:?subject=${subject}`);
+};
+
+const formatAlertTimeInput = (value) => {
+  const digits = value.replace(/\D/g, "").slice(0, 4);
+
+  if (digits.length <= 2) {
+    return digits;
+  }
+
+  return `${digits.slice(0, 2)}:${digits.slice(2)}`;
+};
 
 export function SettingsScreen({ navigation }) {
   const [recordReminder, setRecordReminder] = useState(true);
@@ -73,11 +90,15 @@ export function SettingsScreen({ navigation }) {
           </View>
           <TextInput
             value={alertTime}
-            onChangeText={(value) => setAlertTime(value.slice(0, 5))}
+            onChangeText={(value) => setAlertTime(formatAlertTimeInput(value))}
             editable={recordReminder}
             placeholder={COPY.recordReminderPlaceholder}
             placeholderTextColor="rgba(255, 222, 204, 0.45)"
-            keyboardType="numbers-and-punctuation"
+            keyboardType={Platform.select({
+              ios: "numbers-and-punctuation",
+              android: "numeric",
+              default: "numeric",
+            })}
             maxLength={5}
             style={detailStyles.timeInput}
           />
@@ -117,11 +138,16 @@ export function ContactScreen({ navigation }) {
             title={item.label}
             right={<Ionicons name="chevron-forward" size={21} color="#E8B17C" />}
             last={index === CONTACT_ROWS.length - 1}
+            onPress={() => openContactMail(item.label)}
           />
         ))}
       </View>
 
-      <TouchableOpacity activeOpacity={0.86} style={detailStyles.primaryButton}>
+      <TouchableOpacity
+        activeOpacity={0.86}
+        style={detailStyles.primaryButton}
+        onPress={() => openContactMail(COPY.contactTitle)}
+      >
         <Ionicons name="send-outline" size={18} color="#FFFFFF" />
         <Text style={detailStyles.primaryButtonText}>{COPY.send}</Text>
       </TouchableOpacity>
@@ -131,7 +157,8 @@ export function ContactScreen({ navigation }) {
 
 function DetailShell({ navigation, title, eyebrow, lead, children }) {
   const { width, height } = useWindowDimensions();
-  const shell = createShellStyles(width, height);
+  const insets = useSafeAreaInsets();
+  const shell = createShellStyles(width, height, insets);
 
   return (
     <ImageBackground
@@ -140,7 +167,7 @@ function DetailShell({ navigation, title, eyebrow, lead, children }) {
       resizeMode="cover"
     >
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
-      <SafeAreaView style={shell.safeArea}>
+      <SafeAreaView style={shell.safeArea} edges={["left", "right"]}>
         <ScrollView
           contentContainerStyle={shell.scrollContent}
           showsVerticalScrollIndicator={false}
@@ -171,11 +198,12 @@ function DetailShell({ navigation, title, eyebrow, lead, children }) {
   );
 }
 
-function SettingRow({ icon, title, copy, right, last }) {
+function SettingRow({ icon, title, copy, right, last, onPress }) {
   return (
     <TouchableOpacity
       activeOpacity={0.78}
       style={[detailStyles.settingRow, last && detailStyles.lastRow]}
+      onPress={onPress}
     >
       <View style={detailStyles.rowIcon}>
         <Ionicons name={icon} size={23} color="#FFB36B" />
@@ -199,14 +227,15 @@ function ToneSwitch(props) {
   );
 }
 
-const createShellStyles = (screenWidth, screenHeight) => {
+const createShellStyles = (screenWidth, screenHeight, insets) => {
   const sx = screenWidth / 393;
   const sy = screenHeight / 824;
-  const scale = Math.min(sx, sy);
+  const scale = Math.min(Math.max(Math.min(sx, sy), 0.82), 1.15);
   const ms = (value) => value * scale;
   const vs = (value) => value * sy;
   const pagePadding = ms(screenWidth >= 600 ? 22 : 25);
   const contentWidth = Math.min(screenWidth - pagePadding * 2, screenWidth >= 600 ? 520 : 393);
+  const topPadding = Math.max(insets.top, vs(18)) + vs(screenWidth >= 600 ? 24 : 26);
 
   return StyleSheet.create({
     background: {
@@ -220,7 +249,7 @@ const createShellStyles = (screenWidth, screenHeight) => {
     },
     scrollContent: {
       paddingHorizontal: pagePadding,
-      paddingTop: vs(screenWidth >= 600 ? 48 : 52),
+      paddingTop: topPadding,
       paddingBottom: vs(150),
       alignItems: "center",
     },

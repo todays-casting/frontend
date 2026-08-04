@@ -2,7 +2,6 @@ import React, { useState } from "react";
 import {
   ImageBackground,
   Modal,
-  SafeAreaView,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -11,7 +10,9 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import NotificationSheet from "../components/NotificationSheet";
 
 const COPY = {
   title: "\uB9C8\uC774\uD398\uC774\uC9C0",
@@ -70,8 +71,10 @@ const MENU = [
 
 export default function MyPageScreen({ navigation }) {
   const { width, height } = useWindowDimensions();
-  const { styles, sizes } = createStyles(width, height);
+  const insets = useSafeAreaInsets();
+  const { styles, sizes } = createStyles(width, height, insets);
   const [logoutVisible, setLogoutVisible] = useState(false);
+  const [notificationVisible, setNotificationVisible] = useState(false);
 
   const rootNavigation = navigation.getParent?.();
 
@@ -103,7 +106,7 @@ export default function MyPageScreen({ navigation }) {
         translucent
       />
 
-      <SafeAreaView style={styles.safeArea}>
+      <SafeAreaView style={styles.safeArea} edges={["left", "right"]}>
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
@@ -111,7 +114,11 @@ export default function MyPageScreen({ navigation }) {
           <View style={styles.contentFrame}>
             <View style={styles.header}>
               <Text style={styles.title}>{COPY.title}</Text>
-              <TouchableOpacity activeOpacity={0.75} style={styles.bellButton}>
+              <TouchableOpacity
+                activeOpacity={0.75}
+                style={styles.bellButton}
+                onPress={() => setNotificationVisible(true)}
+              >
                 <Ionicons
                   name="notifications-outline"
                   size={sizes.bell}
@@ -227,6 +234,10 @@ export default function MyPageScreen({ navigation }) {
           onCancel={() => setLogoutVisible(false)}
           onConfirm={confirmLogout}
         />
+        <NotificationSheet
+          visible={notificationVisible}
+          onClose={() => setNotificationVisible(false)}
+        />
       </SafeAreaView>
     </ImageBackground>
   );
@@ -264,10 +275,10 @@ function LogoutDialog({ visible, styles, onCancel, onConfirm }) {
   );
 }
 
-const createStyles = (screenWidth, screenHeight) => {
+const createStyles = (screenWidth, screenHeight, insets) => {
   const sx = screenWidth / 393;
   const sy = screenHeight / 824;
-  const scale = Math.min(sx, sy);
+  const scale = Math.min(Math.max(Math.min(sx, sy), 0.82), 1.15);
   const ms = (value) => value * scale;
   const vs = (value) => value * sy;
   const pagePadding = ms(screenWidth >= 600 ? 22 : 27);
@@ -275,6 +286,7 @@ const createStyles = (screenWidth, screenHeight) => {
   const statGap = ms(screenWidth >= 600 ? 14 : 12);
   const statWidth = (contentWidth - statGap * 2) / 3;
   const isWide = screenWidth >= 600;
+  const topPadding = Math.max(insets.top, vs(isWide ? 24 : 28)) + vs(isWide ? 22 : 24);
 
   return {
     sizes: {
@@ -296,7 +308,7 @@ const createStyles = (screenWidth, screenHeight) => {
       },
       scrollContent: {
         paddingHorizontal: pagePadding,
-        paddingTop: vs(isWide ? 50 : 62),
+        paddingTop: topPadding,
         paddingBottom: vs(isWide ? 192 : 154),
         alignItems: "center",
       },
