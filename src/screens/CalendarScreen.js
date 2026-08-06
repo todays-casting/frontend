@@ -12,52 +12,64 @@ import {
   View,
   Dimensions,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import Svg, {
+  ClipPath,
+  Defs,
+  Image as SvgImage,
+  Path,
+  Rect,
+} from "react-native-svg";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const scale = Math.min(Math.max(SCREEN_WIDTH / 393, 0.82), 1.15);
 const ms = (value) => value * scale;
 const vs = ms;
+const QUOTE_BACKGROUND = require("../../assets/images/calendar-quote-background-v2.jpg");
+const CALENDAR_CARD_PATH =
+  "M31 1 H373 C383 1 390 8 390 18 C399 19 404 26 404 36 V555 C404 565 398 571 388 571 C388 579 381 583 372 583 H32 C23 583 16 579 16 571 C6 571 0 565 0 555 V36 C0 26 6 20 14 18 C14 8 21 1 31 1 Z";
+const CASTING_CARD_PATH =
+  "M31 1 H174 C179 14 188 21 202 21 C216 21 225 14 230 1 H373 C383 1 390 8 390 18 C399 19 404 26 404 36 V555 C404 565 398 571 388 571 C388 579 381 583 372 583 H32 C23 583 16 579 16 571 C6 571 0 565 0 555 V36 C0 26 6 20 14 18 C14 8 21 1 31 1 Z";
+const CASTING_CARD_BACKGROUND = require("../../assets/images/casting-card-sunset-background-v2.jpg");
 
 const DAYS = ["일", "월", "화", "수", "목", "금", "토"];
-const CALENDAR_DAYS = [
-  { day: 27, muted: true },
-  { day: 28, muted: true },
-  { day: 29, muted: true },
-  { day: 30, muted: true },
-  { day: 1, mark: "dot" },
-  { day: 2 },
-  { day: 3 },
-  { day: 4, accent: true },
-  { day: 5 },
-  { day: 6 },
-  { day: 7 },
-  { day: 8 },
-  { day: 9 },
-  { day: 10 },
-  { day: 11 },
-  { day: 12 },
-  { day: 13, mark: "dot" },
-  { day: 14 },
-  { day: 15 },
-  { day: 16 },
-  { day: 17 },
-  { day: 18, accent: true },
-  { day: 19 },
-  { day: 20 },
-  { day: 21, selected: true },
-  { day: 22 },
-  { day: 23 },
-  { day: 24 },
-  { day: 25, accent: true },
-  { day: 26 },
-  { day: 27, mark: "dot" },
-  { day: 28 },
-  { day: 29 },
-  { day: 30, mark: "dot" },
-  { day: 31 },
-];
+const MOCK_RECORD_DAYS = [1, 13, 27, 30];
+
+const toDateKey = (date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
+    date.getDate()
+  ).padStart(2, "0")}`;
+
+const formatFullDate = (date) =>
+  `${date.getFullYear()}.${String(date.getMonth() + 1).padStart(2, "0")}.${String(
+    date.getDate()
+  ).padStart(2, "0")}`;
+
+const createCalendarDays = (year, month, today) => {
+  const firstDay = new Date(year, month, 1);
+  const gridStart = new Date(year, month, 1 - firstDay.getDay());
+
+  return Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(
+      gridStart.getFullYear(),
+      gridStart.getMonth(),
+      gridStart.getDate() + index
+    );
+
+    return {
+      date,
+      key: toDateKey(date),
+      day: date.getDate(),
+      muted: date.getMonth() !== month,
+      accent: date.getDay() === 0,
+      isToday: toDateKey(date) === toDateKey(today),
+    };
+  });
+};
 
 const RECORD = {
   date: "2025.05.21",
@@ -67,14 +79,62 @@ const RECORD = {
   scene: "노을이 지는 창가에서\n서로의 마음을 확인하고 미소를 보낸 순간",
   line: "작은 응원이 누군가의 하루를\n바꿀 수 있다는 걸 기억하자.",
   diary:
-    "오늘은 작은 말 한마디가 오래 마음에 남은 하루였다. 창밖으로 번지는 노을을 보면서 나도 누군가에게 다정한 장면으로 기억되고 싶다고 생각했다. 서두르지 않아도 괜찮고, 오늘의 마음을 있는 그대로 적어두는 것만으로도 충분히 나다운 기록이 된다.",
+    "오늘은 작은 말 한마디가 오래 마음에 남은 하루였다. 창밖으로 번지는 노을을 보면서 나도 누군가에게 다정한 장면으로 기억되고 싶다고 생각했다. 서두르지 않아도 괜찮고, 오늘의 마음을 있는 그대로 적어두는 것만으로도 충분히 나다운 기록이 된다. 오늘은 작은 말 한마디가 오래 마음에 남은 하루였다. 창밖으로 번지는 노을을 보면서 나도 누군가에게 다정한 장면으로 기억되고 싶다고 생각했다. 서두르지 않아도 괜찮고, 오늘의 마음을 있는 그대로 적어두는 것만으로도 충분히 나다운 기록이 된다.",
+    
 };
 
-export default function CalendarScreen() {
-  const [selectedDay, setSelectedDay] = useState(null);
+export default function CalendarScreen({ navigation }) {
+  const insets = useSafeAreaInsets();
+  const today = useMemo(() => new Date(), []);
+  const [visibleMonth, setVisibleMonth] = useState(
+    () => new Date(today.getFullYear(), today.getMonth(), 1)
+  );
+  const [isMonthPickerOpen, setIsMonthPickerOpen] = useState(false);
+  const [pickerYear, setPickerYear] = useState(today.getFullYear());
+  const [pickerMonth, setPickerMonth] = useState(today.getMonth());
+  const [activeDate, setActiveDate] = useState(today);
+  const [selectedDate, setSelectedDate] = useState(null);
   const [isBack, setIsBack] = useState(false);
-  const [favoriteDays, setFavoriteDays] = useState(() => new Set([4, 6, 9, 16]));
+  const [favoriteDates, setFavoriteDates] = useState(() => new Set());
   const flip = useRef(new Animated.Value(0)).current;
+  const sheetTranslateY = useRef(new Animated.Value(vs(560))).current;
+  const yearScrollRef = useRef(null);
+
+  const calendarDays = useMemo(
+    () =>
+      createCalendarDays(
+        visibleMonth.getFullYear(),
+        visibleMonth.getMonth(),
+        today
+      ),
+    [today, visibleMonth]
+  );
+  const recordDates = useMemo(() => {
+    const days = new Set([...MOCK_RECORD_DAYS, today.getDate()]);
+
+    return new Set(
+      [...days].map((day) =>
+        toDateKey(new Date(today.getFullYear(), today.getMonth(), day))
+      )
+    );
+  }, [today]);
+  const monthLabel = `${visibleMonth.getFullYear()}년 ${visibleMonth.getMonth() + 1}월`;
+  const pickerYears = useMemo(
+    () =>
+      Array.from(
+        { length: today.getFullYear() - 1900 + 1 },
+        (_, index) => 1900 + index
+      ),
+    [today]
+  );
+  const selectedDateKey = selectedDate ? toDateKey(selectedDate) : null;
+  const activeDateKey = toDateKey(activeDate);
+  const activeDateHasRecord = recordDates.has(activeDateKey);
+  const markedDateKey =
+    visibleMonth.getFullYear() === activeDate.getFullYear() &&
+    visibleMonth.getMonth() === activeDate.getMonth()
+      ? activeDateKey
+      : null;
 
   const frontRotate = flip.interpolate({
     inputRange: [0, 1],
@@ -91,15 +151,44 @@ export default function CalendarScreen() {
       return;
     }
 
-    setSelectedDay(day.day);
+    setActiveDate(day.date);
     setIsBack(false);
     flip.setValue(0);
+
+    if (!recordDates.has(day.key ?? toDateKey(day.date))) {
+      setSelectedDate(null);
+      return;
+    }
+
+    sheetTranslateY.setValue(vs(560));
+    setSelectedDate(day.date);
+    requestAnimationFrame(() => {
+      Animated.timing(sheetTranslateY, {
+        toValue: 0,
+        duration: 260,
+        useNativeDriver: true,
+      }).start();
+    });
   };
 
   const closeRecord = () => {
-    setSelectedDay(null);
-    setIsBack(false);
-    flip.setValue(0);
+    if (selectedDate === null) {
+      setIsBack(false);
+      flip.setValue(0);
+      return;
+    }
+
+    Animated.timing(sheetTranslateY, {
+      toValue: vs(560),
+      duration: 220,
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) {
+        setSelectedDate(null);
+        setIsBack(false);
+        flip.setValue(0);
+      }
+    });
   };
 
   const toggleCardSide = () => {
@@ -113,21 +202,54 @@ export default function CalendarScreen() {
     }).start();
   };
 
-  const markedDate = useMemo(() => selectedDay || 21, [selectedDay]);
-  const isSelectedFavorite = selectedDay !== null && favoriteDays.has(selectedDay);
+  const isSelectedFavorite =
+    selectedDateKey !== null && favoriteDates.has(selectedDateKey);
+
+  const changeMonth = (offset) => {
+    setVisibleMonth(
+      (current) => new Date(current.getFullYear(), current.getMonth() + offset, 1)
+    );
+    closeRecord();
+  };
+
+  const goToToday = () => {
+    setVisibleMonth(new Date(today.getFullYear(), today.getMonth(), 1));
+    setActiveDate(today);
+    setSelectedDate(null);
+    setIsMonthPickerOpen(false);
+  };
+
+  const toggleMonthPicker = () => {
+    if (!isMonthPickerOpen) {
+      setPickerYear(today.getFullYear());
+      setPickerMonth(today.getMonth());
+    }
+
+    setIsMonthPickerOpen((current) => !current);
+  };
+
+  const applyPickedMonth = () => {
+    setVisibleMonth(new Date(pickerYear, pickerMonth, 1));
+    closeRecord();
+    setIsMonthPickerOpen(false);
+  };
+
+  const goToRecordInput = () => {
+    navigation?.navigate?.("Input");
+  };
 
   const toggleFavorite = () => {
-    if (selectedDay === null) {
+    if (selectedDateKey === null) {
       return;
     }
 
-    setFavoriteDays((current) => {
+    setFavoriteDates((current) => {
       const next = new Set(current);
 
-      if (next.has(selectedDay)) {
-        next.delete(selectedDay);
+      if (next.has(selectedDateKey)) {
+        next.delete(selectedDateKey);
       } else {
-        next.add(selectedDay);
+        next.add(selectedDateKey);
       }
 
       return next;
@@ -140,6 +262,8 @@ export default function CalendarScreen() {
       style={styles.background}
       resizeMode="cover"
     >
+      <View pointerEvents="none" style={styles.backgroundDim} />
+
       <StatusBar
         barStyle="light-content"
         backgroundColor="transparent"
@@ -148,7 +272,12 @@ export default function CalendarScreen() {
 
       <SafeAreaView style={styles.safeArea}>
         <ScrollView
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[
+            styles.content,
+            {
+              paddingTop: Math.max(ms(16) - insets.top, 0) + ms(20),
+            },
+          ]}
           contentInsetAdjustmentBehavior="automatic"
           showsVerticalScrollIndicator={false}
           showsHorizontalScrollIndicator={false}
@@ -156,28 +285,131 @@ export default function CalendarScreen() {
           <View style={styles.header}>
             <View style={styles.headerText}>
               <Text style={styles.greeting}>안녕하세요, 서연님 👋</Text>
-              <Text style={styles.subGreeting}>
+              <Text
+                style={styles.subGreeting}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.75}
+              >
                 하루를 기록하고, 나의 이야기를 쌓아보세요
               </Text>
             </View>
 
             <TouchableOpacity activeOpacity={0.8} style={styles.writeButton}>
-              <Ionicons name="add" size={ms(20)} color="#FFD099" />
+              <Ionicons name="add" size={ms(14)} color="#FFD099" />
               <Text style={styles.writeButtonText}>기록하기</Text>
             </TouchableOpacity>
           </View>
 
           <Text style={styles.screenTitle}>나의 기록 달력</Text>
 
-          <View style={styles.calendarCard}>
-            <View style={styles.calendarHeader}>
-              <Ionicons name="chevron-back" size={ms(28)} color="#E0B487" />
-              <Text style={styles.monthText}>2025년 5월</Text>
-              <Ionicons name="chevron-forward" size={ms(28)} color="#E0B487" />
-              <TouchableOpacity activeOpacity={0.75} style={styles.smallCalendar}>
+            <View style={styles.calendarCard}>
+              <Svg
+                pointerEvents="none"
+                width="100%"
+                height="100%"
+                viewBox="0 0 404 584"
+                preserveAspectRatio="none"
+                style={styles.calendarFrame}
+              >
+                <Path
+                  d={CALENDAR_CARD_PATH}
+                  fill="rgba(31, 13, 52, 0.87)"
+                  stroke="rgba(225, 78, 105, 0.72)"
+                  strokeWidth="1.4"
+                  vectorEffect="non-scaling-stroke"
+                />
+              </Svg>
+              <View style={styles.calendarHeader}>
+              <TouchableOpacity activeOpacity={0.7} onPress={() => changeMonth(-1)}>
+                <Ionicons name="chevron-back" size={ms(26)} color="#E0B487" />
+              </TouchableOpacity>
+              <Text style={styles.monthText}>{monthLabel}</Text>
+              <TouchableOpacity activeOpacity={0.7} onPress={() => changeMonth(1)}>
+                <Ionicons name="chevron-forward" size={ms(26)} color="#E0B487" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                activeOpacity={0.75}
+                style={styles.smallCalendar}
+                onPress={toggleMonthPicker}
+              >
                 <Ionicons name="calendar-outline" size={ms(21)} color="#FFD09A" />
               </TouchableOpacity>
             </View>
+
+            {isMonthPickerOpen && (
+              <View style={styles.monthPicker}>
+                <Text style={styles.pickerLabel}>연도</Text>
+                <ScrollView
+                  ref={yearScrollRef}
+                  horizontal
+                  nestedScrollEnabled
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.yearOptions}
+                  onContentSizeChange={() =>
+                    yearScrollRef.current?.scrollToEnd({ animated: false })
+                  }
+                >
+                  {pickerYears.map((year) => (
+                    <TouchableOpacity
+                      key={year}
+                      activeOpacity={0.75}
+                      style={[
+                        styles.pickerOption,
+                        pickerYear === year && styles.pickerOptionSelected,
+                      ]}
+                      onPress={() => setPickerYear(year)}
+                    >
+                      <Text
+                        style={[
+                          styles.pickerOptionText,
+                          pickerYear === year && styles.pickerOptionTextSelected,
+                        ]}
+                      >
+                        {year}년
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+
+                <Text style={styles.pickerLabel}>월</Text>
+                <View style={styles.monthOptions}>
+                  {Array.from({ length: 12 }, (_, month) => (
+                    <TouchableOpacity
+                      key={month}
+                      activeOpacity={0.75}
+                      style={[
+                        styles.monthOption,
+                        pickerMonth === month && styles.pickerOptionSelected,
+                      ]}
+                      onPress={() => setPickerMonth(month)}
+                    >
+                      <Text
+                        style={[
+                          styles.pickerOptionText,
+                          pickerMonth === month && styles.pickerOptionTextSelected,
+                        ]}
+                      >
+                        {month + 1}월
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                <View style={styles.pickerActions}>
+                  <TouchableOpacity activeOpacity={0.75} onPress={goToToday}>
+                    <Text style={styles.todayPickerText}>오늘</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    style={styles.applyPickerButton}
+                    onPress={applyPickedMonth}
+                  >
+                    <Text style={styles.applyPickerText}>선택</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
 
             <View style={styles.weekRow}>
               {DAYS.map((day) => (
@@ -190,16 +422,16 @@ export default function CalendarScreen() {
             <View style={styles.monthDivider} />
 
             <View style={styles.daysGrid}>
-              {CALENDAR_DAYS.map((date, index) => (
+              {calendarDays.map((date) => (
                 <TouchableOpacity
-                  key={`${date.day}-${index}`}
+                  key={date.key}
                   activeOpacity={0.75}
                   style={styles.dayCell}
                   onPress={() => openRecord(date)}
                 >
                   <View
                     style={
-                      date.day === markedDate && !date.muted
+                      date.key === markedDateKey && !date.muted
                         ? styles.selectedDate
                         : null
                     }
@@ -208,8 +440,8 @@ export default function CalendarScreen() {
                       style={[
                         styles.dayText,
                         date.muted && styles.mutedDay,
-                        date.accent && styles.accentDay,
-                        date.day === markedDate &&
+                        date.accent && !date.muted && styles.accentDay,
+                        date.key === markedDateKey &&
                           !date.muted &&
                           styles.selectedDayText,
                       ]}
@@ -217,31 +449,45 @@ export default function CalendarScreen() {
                       {date.day}
                     </Text>
                   </View>
-                  {favoriteDays.has(date.day) && !date.muted && (
-                    <Ionicons name="heart" size={ms(11)} color="#FF514F" />
+                  {favoriteDates.has(date.key) && !date.muted && (
+                    <Ionicons
+                      name="heart"
+                      size={ms(8)}
+                      color="#FF514F"
+                      style={styles.calendarHeart}
+                    />
                   )}
-                  {date.mark === "dot" && <View style={styles.dayDot} />}
+                  {recordDates.has(date.key) &&
+                    !favoriteDates.has(date.key) &&
+                    !date.muted && (
+                    <View style={styles.dayDot} />
+                  )}
                 </TouchableOpacity>
               ))}
             </View>
           </View>
 
-          <View style={styles.quoteCard}>
-            <View style={styles.quoteDate}>
-              <Text style={styles.quoteDateText}>5.21</Text>
-              <Text style={styles.quoteWeekText}>수요일</Text>
+            <View style={styles.quoteCard}>
+              <Image
+                source={QUOTE_BACKGROUND}
+                style={styles.quoteImage}
+                resizeMode="cover"
+              />
+              <View style={styles.quoteDate}>
+              <Text style={styles.quoteDateText}>
+                {activeDate.getMonth() + 1}.{activeDate.getDate()}
+              </Text>
+              <Text style={styles.quoteWeekText}>
+                {DAYS[activeDate.getDay()]}요일
+              </Text>
             </View>
             <View style={styles.quoteDivider} />
-            <Text style={styles.quoteText}>
-              “{"\n"}따뜻한 마음과 깊은 공감으로{"\n"}사랑을 만들어가는 당신
-              {"\n"}”
-            </Text>
-            <Image
-              source={require("../../assets/images/home_stage.png")}
-              style={styles.quoteImage}
-              resizeMode="cover"
-            />
-          </View>
+            {activeDateHasRecord && (
+              <Text style={styles.quoteText}>
+                “따뜻한 마음과 깊은 공감으로{"\n"}사랑을 만들어가는 당신”
+              </Text>
+            )}
+            </View>
 
           <View style={styles.recordCard}>
             <Image
@@ -260,23 +506,28 @@ export default function CalendarScreen() {
               <TouchableOpacity
                 activeOpacity={0.88}
                 style={styles.recordButton}
-                onPress={() => openRecord({ day: 21 })}
+                onPress={goToRecordInput}
               >
                 <Text style={styles.recordButtonText}>
                   오늘의 기록 보기 / 작성하기
                 </Text>
-                <Ionicons name="chevron-forward" size={ms(21)} color="#FFD09A" />
+                <Ionicons name="chevron-forward" size={ms(18)} color="#FFD09A" />
               </TouchableOpacity>
             </View>
           </View>
         </ScrollView>
       </SafeAreaView>
 
-      <Modal visible={selectedDay !== null} transparent animationType="fade">
+      <Modal visible={selectedDate !== null} transparent animationType="none">
         <View style={styles.modalLayer}>
           <TouchableOpacity style={styles.dimmedArea} onPress={closeRecord} />
 
-          <View style={styles.sheet}>
+          <Animated.View
+            style={[
+              styles.sheet,
+              { transform: [{ translateY: sheetTranslateY }] },
+            ]}
+          >
             <View style={styles.sheetHandle} />
             <TouchableOpacity
               activeOpacity={0.75}
@@ -296,7 +547,7 @@ export default function CalendarScreen() {
                 ]}
               >
                 <CastingCardFront
-                  date={markedDate}
+                  date={selectedDate ? formatFullDate(selectedDate) : ""}
                   isFavorite={isSelectedFavorite}
                   onToggleFavorite={toggleFavorite}
                   onFlip={toggleCardSide}
@@ -311,29 +562,78 @@ export default function CalendarScreen() {
                   { transform: [{ perspective: 1000 }, { rotateY: backRotate }] },
                 ]}
               >
-                <CastingCardBack date={markedDate} onFlip={toggleCardSide} />
+                <CastingCardBack
+                  date={selectedDate ? formatFullDate(selectedDate) : ""}
+                  onFlip={toggleCardSide}
+                />
               </Animated.View>
             </View>
-          </View>
+          </Animated.View>
         </View>
       </Modal>
     </ImageBackground>
   );
 }
 
-function CastingCardFront({ date, isFavorite, onToggleFavorite, onFlip }) {
+export function CastingCardFront({
+  date,
+  isFavorite,
+  onToggleFavorite,
+  onFlip,
+  record = RECORD,
+  eyebrow = "TODAY’S CASTING",
+  rows,
+}) {
+  const infoRows = rows ?? [
+    { icon: "movie-open-outline", label: "오늘의 장르", text: record.genre },
+    { icon: "account-outline", label: "오늘의 배역", text: record.role },
+    { icon: "image-outline", label: "기억에 남은 장면", text: record.scene },
+    { icon: "star-four-points-outline", label: "오늘의 한줄 기록", text: `“${record.line}”` },
+  ];
+
   return (
     <>
-      <Image
-        source={require("../../assets/images/home_stage.png")}
-        style={styles.posterImage}
-        resizeMode="cover"
-      />
-      <View style={styles.posterOverlay} />
-
-      <Text style={styles.posterDate}>2025.05.{String(date).padStart(2, "0")}</Text>
-      <Text style={styles.posterLabel}>TODAY’S CASTING</Text>
-      <Text style={styles.posterTitle}>{RECORD.title}</Text>
+      <Svg
+        pointerEvents="none"
+        width="100%"
+        height="100%"
+        viewBox="0 0 404 584"
+        preserveAspectRatio="none"
+        style={styles.frontArtwork}
+      >
+        <Defs>
+          <ClipPath id="castingCardClip">
+            <Path d={CASTING_CARD_PATH} />
+          </ClipPath>
+        </Defs>
+        <SvgImage
+          href={CASTING_CARD_BACKGROUND}
+          x="0"
+          y="0"
+          width="404"
+          height="584"
+          preserveAspectRatio="xMidYMid slice"
+          clipPath="url(#castingCardClip)"
+        />
+        <Rect
+          x="0"
+          y="0"
+          width="404"
+          height="584"
+          fill="rgba(25, 9, 43, 0.12)"
+          clipPath="url(#castingCardClip)"
+        />
+        <Path
+          d={CASTING_CARD_PATH}
+          fill="none"
+          stroke="rgba(214, 115, 92, 0.82)"
+          strokeWidth="1.4"
+          vectorEffect="non-scaling-stroke"
+        />
+      </Svg>
+      <Text style={styles.posterDate}>{date}</Text>
+      <Text style={styles.posterLabel}>{eyebrow}</Text>
+      <Text style={styles.posterTitle}>{record.title}</Text>
       <TouchableOpacity
         activeOpacity={0.75}
         style={styles.favoriteButton}
@@ -347,10 +647,13 @@ function CastingCardFront({ date, isFavorite, onToggleFavorite, onFlip }) {
       </TouchableOpacity>
 
       <View style={styles.infoPanel}>
-        <InfoRow icon="movie-open-outline" label="오늘의 장르" text={RECORD.genre} />
-        <InfoRow icon="account-outline" label="오늘의 배역" text={RECORD.role} />
-        <InfoRow icon="image-outline" label="기억에 남은 장면" text={RECORD.scene} />
-        <InfoRow icon="star-four-points-outline" label="오늘의 한줄 기록" text={`“${RECORD.line}”`} last />
+        {infoRows.map((row, index) => (
+          <InfoRow
+            key={`${row.label}-${index}`}
+            {...row}
+            last={index === infoRows.length - 1}
+          />
+        ))}
 
         <TouchableOpacity activeOpacity={0.82} style={styles.flipButton} onPress={onFlip}>
           <Text style={styles.flipButtonText}>뒷면 보기</Text>
@@ -361,10 +664,45 @@ function CastingCardFront({ date, isFavorite, onToggleFavorite, onFlip }) {
   );
 }
 
-function CastingCardBack({ date, onFlip }) {
+export function CastingCardBack({ date, onFlip, diary = RECORD.diary }) {
+  const [scrollMetrics, setScrollMetrics] = useState({
+    contentHeight: 0,
+    viewportHeight: 0,
+    scrollY: 0,
+  });
+  const { contentHeight, viewportHeight, scrollY } = scrollMetrics;
+  const hasOverflow = contentHeight > viewportHeight + 1;
+  const scrollThumbHeight = hasOverflow
+    ? Math.max(ms(24), (viewportHeight * viewportHeight) / contentHeight)
+    : viewportHeight;
+  const scrollTravel = Math.max(viewportHeight - scrollThumbHeight, 0);
+  const scrollThumbTop = hasOverflow
+    ? Math.min(
+        (scrollY / Math.max(contentHeight - viewportHeight, 1)) * scrollTravel,
+        scrollTravel
+      )
+    : 0;
+
   return (
-    <View style={styles.cardBackInner}>
-      <Text style={styles.paperDate}>2025.05.{String(date).padStart(2, "0")}</Text>
+    <>
+      <Svg
+        pointerEvents="none"
+        width="100%"
+        height="100%"
+        viewBox="0 0 404 584"
+        preserveAspectRatio="none"
+        style={styles.backArtwork}
+      >
+        <Path
+          d={CASTING_CARD_PATH}
+          fill="#F4E9D9"
+          stroke="rgba(184, 121, 84, 0.95)"
+          strokeWidth="1.4"
+          vectorEffect="non-scaling-stroke"
+        />
+      </Svg>
+      <View style={styles.cardBackInner}>
+      <Text style={styles.paperDate}>{date}</Text>
       <View style={styles.paperDivider}>
         <View style={styles.paperLine} />
         <Text style={styles.paperStar}>✦</Text>
@@ -373,13 +711,49 @@ function CastingCardBack({ date, onFlip }) {
       <Text style={styles.backTitle}>오늘의 기록</Text>
       <View style={styles.titleUnderline} />
 
-      <ScrollView
-        style={styles.diaryScroll}
-        contentContainerStyle={styles.diaryContent}
-        showsVerticalScrollIndicator
+      <View
+        style={styles.diaryViewport}
+        onLayout={({ nativeEvent }) =>
+          setScrollMetrics((current) => ({
+            ...current,
+            viewportHeight: nativeEvent.layout.height,
+          }))
+        }
       >
-        <Text style={styles.diaryText}>{RECORD.diary}</Text>
-      </ScrollView>
+        <ScrollView
+          style={styles.diaryScroll}
+          contentContainerStyle={styles.diaryContent}
+          showsVerticalScrollIndicator={false}
+          scrollEventThrottle={16}
+          onContentSizeChange={(_, height) =>
+            setScrollMetrics((current) => ({
+              ...current,
+              contentHeight: height,
+            }))
+          }
+          onScroll={({ nativeEvent }) =>
+            setScrollMetrics((current) => ({
+              ...current,
+              scrollY: nativeEvent.contentOffset.y,
+            }))
+          }
+        >
+          <Text style={styles.diaryText}>{diary}</Text>
+        </ScrollView>
+        {hasOverflow && (
+          <View pointerEvents="none" style={styles.diaryScrollTrack}>
+            <View
+              style={[
+                styles.diaryScrollThumb,
+                {
+                  height: scrollThumbHeight,
+                  transform: [{ translateY: scrollThumbTop }],
+                },
+              ]}
+            />
+          </View>
+        )}
+      </View>
 
       <View style={styles.bottomPaperDivider}>
         <View style={styles.paperLine} />
@@ -388,10 +762,11 @@ function CastingCardBack({ date, onFlip }) {
       </View>
 
       <TouchableOpacity activeOpacity={0.82} style={styles.paperFlipButton} onPress={onFlip}>
-        <Text style={styles.flipButtonText}>앞면 보기</Text>
-        <Ionicons name="arrow-forward" size={ms(22)} color="#FF8D4C" />
+        <Text style={styles.paperFlipButtonText}>앞면 보기</Text>
+        <Ionicons name="arrow-forward" size={ms(22)} color="#8B5738" />
       </TouchableOpacity>
-    </View>
+      </View>
+    </>
   );
 }
 
@@ -416,12 +791,15 @@ const styles = StyleSheet.create({
     height: "100%",
     backgroundColor: "#070B1D",
   },
+  backgroundDim: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+  },
   safeArea: {
     flex: 1,
   },
   content: {
-    paddingHorizontal: ms(18),
-    paddingTop: vs(41),
+    paddingHorizontal: ms(36.5),
     paddingBottom: vs(156),
   },
   header: {
@@ -431,26 +809,29 @@ const styles = StyleSheet.create({
   },
   headerText: {
     flex: 1,
-    paddingRight: ms(10),
+    marginTop: ms(40),
+    marginLeft: ms(-1),
+    paddingRight: ms(8),
   },
   greeting: {
     color: "#D8AD7B",
     fontFamily: "NanumSquareNeo",
-    fontSize: ms(18),
-    lineHeight: ms(27),
+    fontSize: ms(16),
+    lineHeight: ms(19),
   },
   subGreeting: {
-    marginTop: vs(4),
+    marginTop: 5,
     color: "rgba(219, 160, 174, 0.72)",
     fontFamily: "NanumSquareNeo",
-    fontSize: ms(12),
-    lineHeight: ms(20),
+    fontSize: ms(11),
+    lineHeight: ms(17),
   },
   writeButton: {
-    minWidth: ms(86),
-    height: vs(34),
-    paddingHorizontal: ms(12),
-    borderRadius: ms(17),
+    minWidth: ms(68),
+    height: vs(26),
+    marginTop: ms(40),
+    paddingHorizontal: ms(7),
+    borderRadius: ms(13),
     borderWidth: 1,
     borderColor: "rgba(255, 83, 80, 0.72)",
     backgroundColor: "rgba(103, 28, 45, 0.62)",
@@ -459,29 +840,31 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   writeButtonText: {
-    marginLeft: ms(3),
+    marginLeft: ms(2),
     color: "#EBC08F",
     fontFamily: "NanumSquareNeo",
-    fontSize: ms(13),
-    lineHeight: ms(18),
+    fontSize: ms(10),
+    lineHeight: ms(14),
   },
   screenTitle: {
     marginTop: vs(25),
     color: "#D9B184",
     fontFamily: "MaruBuriSemiBold",
-    fontSize: ms(36),
-    lineHeight: ms(48),
+    fontSize: ms(25),
+    lineHeight: ms(34),
   },
   calendarCard: {
+    position: "relative",
     marginTop: vs(16),
+    marginHorizontal: ms(-4),
     paddingHorizontal: ms(15),
     paddingTop: vs(19),
     paddingBottom: vs(15),
-    borderRadius: ms(19),
-    borderWidth: 1,
-    borderColor: "rgba(225, 78, 105, 0.72)",
-    backgroundColor: "rgba(31, 13, 52, 0.87)",
-    overflow: "hidden",
+    backgroundColor: "transparent",
+  },
+  calendarFrame: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 0,
   },
   calendarHeader: {
     height: vs(34),
@@ -492,9 +875,9 @@ const styles = StyleSheet.create({
   monthText: {
     marginHorizontal: ms(24),
     color: "#E7C393",
-    fontFamily: "NanumSquareNeo",
-    fontSize: ms(19),
-    lineHeight: ms(27),
+    fontFamily: "MaruBuriSemiBold",
+    fontSize: ms(17),
+    lineHeight: ms(25),
   },
   smallCalendar: {
     position: "absolute",
@@ -507,6 +890,86 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  monthPicker: {
+    marginTop: vs(10),
+    padding: ms(12),
+    borderRadius: ms(14),
+    borderWidth: 1,
+    borderColor: "rgba(215, 108, 140, 0.38)",
+    backgroundColor: "rgba(18, 10, 35, 0.96)",
+  },
+  pickerLabel: {
+    marginBottom: vs(6),
+    color: "rgba(231, 195, 147, 0.72)",
+    fontFamily: "MaruBuriSemiBold",
+    fontSize: ms(11),
+    lineHeight: ms(16),
+  },
+  yearOptions: {
+    paddingBottom: vs(10),
+    gap: ms(6),
+  },
+  pickerOption: {
+    minWidth: ms(58),
+    height: vs(28),
+    paddingHorizontal: ms(8),
+    borderRadius: ms(8),
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(91, 55, 102, 0.42)",
+  },
+  pickerOptionSelected: {
+    borderWidth: 1,
+    borderColor: "#FF8A56",
+    backgroundColor: "rgba(165, 65, 69, 0.68)",
+  },
+  pickerOptionText: {
+    color: "rgba(237, 216, 186, 0.72)",
+    fontFamily: "MaruBuriSemiBold",
+    fontSize: ms(11),
+    lineHeight: ms(15),
+  },
+  pickerOptionTextSelected: {
+    color: "#FFD09A",
+  },
+  monthOptions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: ms(5),
+  },
+  monthOption: {
+    width: "15%",
+    height: vs(27),
+    borderRadius: ms(8),
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(91, 55, 102, 0.42)",
+  },
+  pickerActions: {
+    marginTop: vs(12),
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: ms(14),
+  },
+  todayPickerText: {
+    color: "rgba(255, 208, 154, 0.76)",
+    fontFamily: "MaruBuriSemiBold",
+    fontSize: ms(11),
+  },
+  applyPickerButton: {
+    minWidth: ms(50),
+    height: vs(28),
+    borderRadius: ms(14),
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#B95349",
+  },
+  applyPickerText: {
+    color: "#FFE0B8",
+    fontFamily: "MaruBuriSemiBold",
+    fontSize: ms(11),
+  },
   weekRow: {
     marginTop: vs(20),
     flexDirection: "row",
@@ -514,7 +977,7 @@ const styles = StyleSheet.create({
   weekText: {
     width: `${100 / 7}%`,
     color: "#C79980",
-    fontFamily: "NanumSquareNeo",
+    fontFamily: "MaruBuriSemiBold",
     fontSize: ms(13),
     lineHeight: ms(20),
     textAlign: "center",
@@ -530,29 +993,38 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
   },
   dayCell: {
+    position: "relative",
     width: `${100 / 7}%`,
     height: vs(38),
     alignItems: "center",
     justifyContent: "center",
   },
   selectedDate: {
-    width: ms(34),
-    height: ms(34),
-    borderRadius: ms(17),
+    width: ms(30),
+    height: ms(30),
+    borderRadius: ms(15),
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#FF6841",
     shadowColor: "#FF6841",
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.72,
-    shadowRadius: 12,
-    elevation: 12,
+    shadowRadius: 9,
+    elevation: 9,
   },
   dayText: {
     color: "#EDD8BA",
-    fontFamily: "NanumSquareNeo",
-    fontSize: ms(15),
-    lineHeight: ms(21),
+    fontFamily: "MaruBuriSemiBold",
+    fontSize: ms(13),
+    lineHeight: ms(19),
+    fontVariant: ["tabular-nums"],
+  },
+  calendarHeart: {
+    position: "absolute",
+    top: vs(25),
+    left: "50%",
+    transform: [{ translateX: ms(-4) }],
+    zIndex: 2,
   },
   mutedDay: {
     color: "rgba(229, 201, 185, 0.26)",
@@ -564,26 +1036,38 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
   },
   dayDot: {
+    position: "absolute",
+    top: vs(34),
+    left: "50%",
     width: ms(5),
     height: ms(5),
     borderRadius: ms(2.5),
     backgroundColor: "#FF843D",
-    marginTop: vs(1),
+    transform: [{ translateX: ms(-2.5) }],
+    zIndex: 1,
   },
   quoteCard: {
+    position: "relative",
     marginTop: vs(14),
+    marginHorizontal: ms(-4),
     height: vs(102),
     borderRadius: ms(16),
     borderWidth: 1,
     borderColor: "rgba(221, 72, 91, 0.64)",
-    backgroundColor: "rgba(58, 18, 46, 0.62)",
+    backgroundColor: "transparent",
     overflow: "hidden",
     flexDirection: "row",
     alignItems: "center",
   },
   quoteImage: {
-    ...StyleSheet.absoluteFillObject,
-    opacity: 0.55,
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    width: "100%",
+    height: "100%",
+    zIndex: 0,
   },
   quoteDate: {
     width: ms(84),
@@ -598,7 +1082,7 @@ const styles = StyleSheet.create({
   },
   quoteWeekText: {
     color: "#F3D9BA",
-    fontFamily: "NanumSquareNeo",
+    fontFamily: "MaruBuriSemiBold",
     fontSize: ms(13),
   },
   quoteDivider: {
@@ -612,12 +1096,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: ms(18),
     color: "#FFD5A6",
     fontFamily: "NanumSquareNeo",
-    fontSize: ms(13),
-    lineHeight: ms(23),
+    fontSize: ms(11),
+    lineHeight: ms(21),
     zIndex: 1,
   },
   recordCard: {
     marginTop: vs(14),
+    marginHorizontal: ms(-4),
     minHeight: vs(124),
     padding: ms(12),
     borderRadius: ms(16),
@@ -627,8 +1112,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
   },
   recordImage: {
-    width: ms(112),
-    height: vs(100),
+    width: ms(100),
+    height: vs(90),
     borderRadius: ms(12),
   },
   recordInfo: {
@@ -639,22 +1124,22 @@ const styles = StyleSheet.create({
   recordEyebrow: {
     color: "#FFD19B",
     fontFamily: "NanumSquareNeo",
-    fontSize: ms(13),
-    lineHeight: ms(19),
+    fontSize: ms(12),
+    lineHeight: ms(18),
   },
   recordQuestion: {
     marginTop: vs(6),
     color: "#F6D8B7",
-    fontFamily: "NanumSquareNeo",
-    fontSize: ms(13),
-    lineHeight: ms(20),
+    fontFamily: "MaruBuriSemiBold",
+    fontSize: ms(12),
+    lineHeight: ms(18),
   },
   recordHelp: {
     marginTop: vs(2),
     color: "rgba(255, 230, 211, 0.62)",
     fontFamily: "NanumSquareNeo",
-    fontSize: ms(11),
-    lineHeight: ms(17),
+    fontSize: ms(10),
+    lineHeight: ms(15),
   },
   recordButton: {
     marginTop: vs(10),
@@ -671,8 +1156,8 @@ const styles = StyleSheet.create({
   recordButtonText: {
     color: "#FFD09A",
     fontFamily: "NanumSquareNeo",
-    fontSize: ms(12),
-    lineHeight: ms(17),
+    fontSize: ms(10),
+    lineHeight: ms(15),
   },
   modalLayer: {
     flex: 1,
@@ -722,47 +1207,45 @@ const styles = StyleSheet.create({
     position: "absolute",
     width: "100%",
     height: "100%",
-    borderRadius: ms(12),
-    borderWidth: 1,
-    borderColor: "#F06437",
-    backgroundColor: "#1F1234",
-    overflow: "hidden",
+    backgroundColor: "transparent",
     backfaceVisibility: "hidden",
   },
-  frontCard: {},
+  frontCard: {
+    overflow: "hidden",
+  },
   backCard: {
+    overflow: "hidden",
     transform: [{ rotateY: "180deg" }],
   },
-  posterImage: {
+  frontArtwork: {
     ...StyleSheet.absoluteFillObject,
   },
-  posterOverlay: {
+  backArtwork: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(31, 8, 43, 0.22)",
   },
   posterDate: {
     marginTop: vs(28),
-    color: "#F6D5A9",
+    color: "#E8D3C9",
     fontFamily: "MaruBuriSemiBold",
-    fontSize: ms(15),
-    lineHeight: ms(22),
+    fontSize: ms(13),
+    lineHeight: ms(20),
     textAlign: "center",
   },
   posterLabel: {
     marginTop: vs(4),
-    color: "#EAC6AE",
+    color: "#D7C0C3",
     fontFamily: "MaruBuriSemiBold",
-    fontSize: ms(8),
-    lineHeight: ms(13),
+    fontSize: ms(6),
+    lineHeight: ms(11),
     letterSpacing: 1.7,
     textAlign: "center",
   },
   posterTitle: {
     marginTop: vs(8),
-    color: "#FFE0AE",
+    color: "#EED5C7",
     fontFamily: "MaruBuriSemiBold",
-    fontSize: ms(25),
-    lineHeight: ms(36),
+    fontSize: ms(23),
+    lineHeight: ms(34),
     textAlign: "center",
   },
   favoriteButton: {
@@ -814,14 +1297,14 @@ const styles = StyleSheet.create({
   infoLabel: {
     color: "#FFAB5D",
     fontFamily: "NanumSquareNeo",
-    fontSize: ms(10),
-    lineHeight: ms(15),
+    fontSize: ms(9),
+    lineHeight: ms(14),
   },
   infoText: {
     color: "#F7DABD",
     fontFamily: "NanumSquareNeo",
-    fontSize: ms(10),
-    lineHeight: ms(16),
+    fontSize: ms(9),
+    lineHeight: ms(15),
   },
   flipButton: {
     alignSelf: "center",
@@ -839,15 +1322,15 @@ const styles = StyleSheet.create({
     marginRight: ms(12),
     color: "#FF9B58",
     fontFamily: "NanumSquareNeo",
-    fontSize: ms(12),
-    lineHeight: ms(17),
+    fontSize: ms(11),
+    lineHeight: ms(16),
   },
   cardBackInner: {
     flex: 1,
     paddingHorizontal: ms(24),
     paddingTop: vs(39),
     paddingBottom: vs(17),
-    backgroundColor: "#F4E9D9",
+    backgroundColor: "transparent",
   },
   paperDate: {
     color: "#9A633E",
@@ -881,7 +1364,7 @@ const styles = StyleSheet.create({
     lineHeight: ms(16),
   },
   backTitle: {
-    marginTop: vs(20),
+    marginTop: vs(10),
     color: "#2A2523",
     fontFamily: "Mindeulle",
     fontSize: ms(23),
@@ -893,11 +1376,14 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: "rgba(112, 82, 52, 0.2)",
   },
-  diaryScroll: {
+  diaryViewport: {
     flex: 1,
     marginTop: vs(17),
-    marginRight: ms(-10),
-    paddingRight: ms(10),
+    position: "relative",
+  },
+  diaryScroll: {
+    flex: 1,
+    paddingRight: ms(12),
   },
   diaryContent: {
     paddingRight: ms(12),
@@ -907,7 +1393,23 @@ const styles = StyleSheet.create({
     color: "#2F2925",
     fontFamily: "Mindeulle",
     fontSize: ms(14),
-    lineHeight: ms(26),
+    lineHeight: ms(22),
+  },
+  diaryScrollTrack: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    width: ms(2),
+    borderRadius: ms(1),
+    backgroundColor: "rgba(154, 99, 62, 0.22)",
+  },
+  diaryScrollThumb: {
+    position: "absolute",
+    right: ms(-1),
+    width: ms(4),
+    borderRadius: ms(2),
+    backgroundColor: "#9A633E",
   },
   paperFlipButton: {
     alignSelf: "center",
@@ -920,5 +1422,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
+  },
+  paperFlipButtonText: {
+    marginRight: ms(12),
+    color: "#8B5738",
+    fontFamily: "NanumSquareNeo",
+    fontSize: ms(11),
+    lineHeight: ms(16),
   },
 });

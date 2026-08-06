@@ -24,25 +24,25 @@ function TabIcon({ routeName, focused }) {
   const color = focused ? "#FFC17B" : "rgba(255, 255, 255, 0.62)";
 
   if (routeName === "Home") {
-    return <Ionicons name="home" size={30} color={color} />;
+    return <Ionicons name="home" size={21} color={color} />;
   }
 
   if (routeName === "Calendar") {
-    return <Ionicons name="calendar-outline" size={30} color={color} />;
+    return <Ionicons name="calendar-outline" size={21} color={color} />;
   }
 
   if (routeName === "History") {
     return (
       <MaterialCommunityIcons
         name="filmstrip"
-        size={31}
+        size={22}
         color={color}
       />
     );
   }
 
   if (routeName === "MyPage") {
-    return <Ionicons name="person-outline" size={31} color={color} />;
+    return <Ionicons name="person-outline" size={22} color={color} />;
   }
 
   return null;
@@ -53,16 +53,16 @@ function CustomTabBar({ state, descriptors, navigation }) {
 
   return (
     <View
-      style={[styles.tabBarWrap, { height: 132 + insets.bottom }]}
+      style={[styles.tabBarWrap, { height: 108 + insets.bottom }]}
       pointerEvents="box-none"
     >
       <View
         style={[
           styles.tabBar,
           {
-            height: 116 + insets.bottom,
-            paddingTop: 22,
-            paddingBottom: Math.max(insets.bottom, 16),
+            height: 94 + insets.bottom,
+            paddingTop: 16,
+            paddingBottom: Math.max(insets.bottom, 12),
           },
         ]}
       >
@@ -96,7 +96,7 @@ function CustomTabBar({ state, descriptors, navigation }) {
                 <View style={styles.centerCircle}>
                   <MaterialCommunityIcons
                     name="pencil"
-                    size={38}
+                    size={27}
                     color="#FFFFFF"
                   />
                   <Text style={styles.centerSparkle}>{"\u2726"}</Text>
@@ -167,7 +167,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    height: 142,
+    height: 108,
     alignItems: "center",
     zIndex: 100,
     elevation: 100,
@@ -178,12 +178,12 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    height: 125,
+    height: 94,
     paddingHorizontal: 0,
-    paddingTop: 29,
-    paddingBottom: 15,
-    borderTopLeftRadius: 38,
-    borderTopRightRadius: 38,
+    paddingTop: 16,
+    paddingBottom: 12,
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
     borderWidth: 1.2,
     borderBottomWidth: 0,
     borderColor: "rgba(151, 96, 197, 0.55)",
@@ -205,11 +205,11 @@ const styles = StyleSheet.create({
   },
 
   tabLabel: {
-    marginTop: 9,
+    marginTop: 6,
     color: "rgba(255, 255, 255, 0.62)",
     fontFamily: "NanumSquareNeo",
-    fontSize: 11,
-    lineHeight: 21,
+    fontSize: 9,
+    lineHeight: 15,
   },
 
   activeLabel: {
@@ -220,13 +220,13 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     alignItems: "center",
-    marginTop: -43,
+    marginTop: -24,
   },
 
   centerCircle: {
-    width: 78,
-    height: 78,
-    borderRadius: 39,
+    width: 54,
+    height: 54,
+    borderRadius: 27,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#FF8150",
@@ -241,18 +241,18 @@ const styles = StyleSheet.create({
 
   centerSparkle: {
     position: "absolute",
-    top: 20,
-    right: 22,
+    top: 13,
+    right: 15,
     color: "#FFFFFF",
     fontFamily: "MaruBuriSemiBold",
-    fontSize: 16,
+    fontSize: 11,
   },
 
   centerLabel: {
-    marginTop: 9,
+    marginTop: 6,
     color: "#FFC17B",
     fontFamily: "NanumSquareNeo",
-    fontSize: 14,
-    lineHeight: 22,
+    fontSize: 10,
+    lineHeight: 16,
   },
 });

@@ -96,29 +96,22 @@ const HISTORY_RECORDS = [
     scene: "노을이 번지는 하늘을 오래 바라본 시간",
     liked: false,
   },
-  {
-    date: "2025.05.25",
-    day: "일",
-    title: "다음 장면의\n작가",
-    genre: "Life\nStory",
-    emotion: "정리 · 희망 · 담담함",
-    line: "내일의 문장은 오늘의 기록에서 시작된다.",
-    scene: "한 주를 정리하며 조용히 웃었던 밤",
-    liked: false,
-  },
 ];
 
 const DIARY_TEXT =
   "새벽 일찍 눈이 떠졌다.\n창문을 열자 상쾌한 공기가 얼굴을 스쳤다.\n따뜻한 차 한 잔을 내려 천천히 마시며\n오늘 하루를 어떻게 보내고 싶은지 생각해봤다.\n\n오후엔 도서관에 다녀왔다.\n조용한 공간에서 책을 읽으니\n복잡했던 마음이 차분해졌다.\n새로운 문장을 만나면 마음이 환해지는 기분이었다.\n\n저녁엔 오랜만에 친구와 통화를 했다.\n서로의 이야기를 듣고 나니\n다시 힘을 낼 수 있을 것 같았다.\n\n큰 성과는 없었지만,\n작은 순간들이 모여 의미 있는 하루가 된 것 같다.\n\n오늘도 잘 해냈어, 나 자신.\n내일은 더 멋진 하루가 되길. ✦";
 
 export default function HistoryScreen() {
-  const [activeIndex, setActiveIndex] = useState(3);
+  const [activeIndex, setActiveIndex] = useState(0);
   const [backVisible, setBackVisible] = useState(false);
   const [notificationVisible, setNotificationVisible] = useState(false);
   const [favoriteDates, setFavoriteDates] = useState(
     () => new Set(HISTORY_RECORDS.filter((record) => record.liked).map((record) => record.date))
   );
   const scrollRef = useRef(null);
+  const scrollEndTimerRef = useRef(null);
+  const lastScrollOffsetRef = useRef(0);
+  const isDraggingRef = useRef(false);
   const scrollX = useRef(new Animated.Value(activeIndex * SNAP)).current;
   const flip = useRef(new Animated.Value(0)).current;
 
@@ -182,12 +175,44 @@ export default function HistoryScreen() {
     });
   };
 
-  const handleMomentumEnd = (event) => {
-    const offsetX = event.nativeEvent.contentOffset.x;
-    const nextIndex = Math.round(offsetX / SNAP);
+  const snapToNearestCard = (offsetX) => {
+    const nextIndex = Math.max(
+      0,
+      Math.min(Math.round(offsetX / SNAP), HISTORY_RECORDS.length - 1)
+    );
+    const snappedOffset = nextIndex * SNAP;
 
-    setActiveIndex(Math.max(0, Math.min(nextIndex, HISTORY_RECORDS.length - 1)));
+    setActiveIndex(nextIndex);
     resetCardSide();
+
+    if (Math.abs(offsetX - snappedOffset) > 0.5) {
+      scrollRef.current?.scrollTo({
+        x: snappedOffset,
+        animated: true,
+      });
+    }
+  };
+
+  const scheduleNearestCardSnap = (offsetX, delay = 110) => {
+    clearTimeout(scrollEndTimerRef.current);
+    scrollEndTimerRef.current = setTimeout(() => {
+      if (!isDraggingRef.current) {
+        snapToNearestCard(offsetX);
+      }
+    }, delay);
+  };
+
+  const handleMomentumEnd = (event) => {
+    snapToNearestCard(event.nativeEvent.contentOffset.x);
+  };
+
+  const handleCarouselScroll = (event) => {
+    const offsetX = event.nativeEvent.contentOffset.x;
+    lastScrollOffsetRef.current = offsetX;
+
+    if (!isDraggingRef.current) {
+      scheduleNearestCardSnap(offsetX);
+    }
   };
 
   return (
@@ -196,6 +221,7 @@ export default function HistoryScreen() {
       style={styles.background}
       resizeMode="cover"
     >
+      <View pointerEvents="none" style={styles.backgroundDim} />
       <StatusBar
         barStyle="light-content"
         backgroundColor="transparent"
@@ -212,9 +238,14 @@ export default function HistoryScreen() {
           <View style={styles.header}>
             <View style={styles.headerText}>
               <Text style={styles.title}>히스토리 조회</Text>
-              <Text style={styles.subtitle}>
-                지난간 하루의 기록을 다시 살펴보세요.
-              </Text>
+            <Text
+              style={styles.subtitle}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.75}
+            >
+              지난간 하루의 기록을 다시 살펴보세요.
+            </Text>
             </View>
 
             <TouchableOpacity
@@ -234,7 +265,7 @@ export default function HistoryScreen() {
               adjustsFontSizeToFit
               minimumFontScale={0.82}
             >
-              2025년 05월 18일 ~ 2025년 05월 25일
+              2025년 05월 18일 ~ 2025년 05월 24일
             </Text>
             <Ionicons name="chevron-down" size={ms(22)} color="#CE737D" />
           </TouchableOpacity>
@@ -244,15 +275,28 @@ export default function HistoryScreen() {
               ref={scrollRef}
               horizontal
               showsHorizontalScrollIndicator={false}
-              snapToInterval={SNAP}
+              snapToOffsets={HISTORY_RECORDS.map((_, index) => index * SNAP)}
+              snapToAlignment="start"
+              disableIntervalMomentum
               decelerationRate="fast"
               bounces={false}
               contentOffset={{ x: activeIndex * SNAP, y: 0 }}
               contentContainerStyle={styles.carouselContent}
+              onScrollBeginDrag={() => {
+                isDraggingRef.current = true;
+                clearTimeout(scrollEndTimerRef.current);
+              }}
+              onScrollEndDrag={() => {
+                isDraggingRef.current = false;
+                scheduleNearestCardSnap(lastScrollOffsetRef.current, 80);
+              }}
               onMomentumScrollEnd={handleMomentumEnd}
               onScroll={Animated.event(
                 [{ nativeEvent: { contentOffset: { x: scrollX } } }],
-                { useNativeDriver: true }
+                {
+                  useNativeDriver: true,
+                  listener: handleCarouselScroll,
+                }
               )}
               scrollEventThrottle={16}
             >
@@ -269,7 +313,22 @@ export default function HistoryScreen() {
                 });
                 const opacity = scrollX.interpolate({
                   inputRange,
-                  outputRange: [0.58, 1, 0.58],
+                  outputRange: [0.68, 1, 0.68],
+                  extrapolate: "clamp",
+                });
+                const rotateY = scrollX.interpolate({
+                  inputRange,
+                  outputRange: ["-38deg", "0deg", "38deg"],
+                  extrapolate: "clamp",
+                });
+                const translateX = scrollX.interpolate({
+                  inputRange,
+                  outputRange: [-ms(20), 0, ms(20)],
+                  extrapolate: "clamp",
+                });
+                const translateY = scrollX.interpolate({
+                  inputRange,
+                  outputRange: [vs(15), 0, vs(15)],
                   extrapolate: "clamp",
                 });
 
@@ -282,7 +341,13 @@ export default function HistoryScreen() {
                         opacity,
                         zIndex: index === activeIndex ? 3 : 1,
                         elevation: index === activeIndex ? 3 : 1,
-                        transform: [{ scale }],
+                        transform: [
+                          { perspective: ms(900) },
+                          { translateX },
+                          { translateY },
+                          { rotateY },
+                          { scale },
+                        ],
                       },
                     ]}
                   >
@@ -394,72 +459,35 @@ function HistoryCardFront({
   onToggleFavorite,
   onShowBack,
 }) {
+  const rows = [
+    { icon: "heart-outline", label: "오늘의 감정", text: record.emotion },
+    { icon: "pencil-outline", label: "오늘의 한줄 기록", text: record.line },
+    { icon: "image-outline", label: "기억에 남은 장면", text: record.scene },
+  ];
+
   return (
-    <View style={[styles.historyCard, !focused && styles.sideCard]}>
-      <Image
-        source={require("../../assets/images/home_stage.png")}
-        style={styles.cardImage}
-        resizeMode="cover"
+    <View style={[styles.sharedCastingCard, !focused && styles.sideCard]}>
+      <CastingCardFront
+        date={record.date}
+        record={record}
+        eyebrow="TODAY’S GENRE"
+        rows={rows}
+        isFavorite={isFavorite}
+        onToggleFavorite={onToggleFavorite}
+        onFlip={onShowBack}
       />
-      <View style={styles.cardShade} />
-
-      <View style={styles.cardTopNotch} />
-      <Text style={styles.cardDate}>{record.date}</Text>
-      <TouchableOpacity
-        activeOpacity={0.72}
-        style={styles.favoriteButton}
-        onPress={onToggleFavorite}
-      >
-        <Ionicons
-          name={isFavorite ? "heart" : "heart-outline"}
-          size={ms(32)}
-          color="#FF6D63"
-        />
-      </TouchableOpacity>
-      <Text style={styles.cardGenreLabel}>TODAY’S GENRE</Text>
-      <Text style={styles.cardTitle}>{record.title}</Text>
-
-      <View style={styles.frontInfoPanel}>
-        <HistoryInfoRow icon="heart-outline" label="오늘의 감정" text={record.emotion} />
-        <HistoryInfoRow icon="pencil-outline" label="오늘의 한줄 기록" text={record.line} />
-        <HistoryInfoRow icon="image-outline" label="기억에 남은 장면" text={record.scene} last />
-
-        <TouchableOpacity activeOpacity={0.85} style={styles.flipButton} onPress={onShowBack}>
-          <Text style={styles.flipText}>뒷면 보기</Text>
-          <Ionicons name="arrow-forward" size={ms(22)} color="#FFB062" />
-        </TouchableOpacity>
-      </View>
     </View>
   );
 }
 
 function HistoryCardBack({ record, onShowFront }) {
   return (
-    <View style={[styles.historyCard, styles.paperCard]}>
-      <View style={styles.paperTopNotch} />
-      <Text style={styles.paperDate}>
-        {record.date} ({record.day})
-      </Text>
-      <View style={styles.paperDivider}>
-        <View style={styles.paperLine} />
-        <Text style={styles.paperStar}>✦</Text>
-        <View style={styles.paperLine} />
-      </View>
-
-      <Text style={styles.paperTitle}>오늘의 기록</Text>
-      <View style={styles.paperTitleLine} />
-
-      <ScrollView
-        style={styles.diaryScroll}
-        contentContainerStyle={styles.diaryContent}
-        showsVerticalScrollIndicator={false}
-      >
-        <Text style={styles.diaryText}>{DIARY_TEXT}</Text>
-      </ScrollView>
-
-      <TouchableOpacity activeOpacity={0.85} style={styles.paperButton} onPress={onShowFront}>
-        <Text style={styles.paperButtonText}>앞면 보기</Text>
-      </TouchableOpacity>
+    <View style={styles.sharedCastingCard}>
+      <CastingCardBack
+        date={record.date}
+        diary={record.diary ?? DIARY_TEXT}
+        onFlip={onShowFront}
+      />
     </View>
   );
 }
@@ -483,6 +511,10 @@ const styles = StyleSheet.create({
     height: "100%",
     backgroundColor: "#050A1C",
   },
+  backgroundDim: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+  },
   safeArea: {
     flex: 1,
   },
@@ -491,38 +523,40 @@ const styles = StyleSheet.create({
   },
   content: {
     flexGrow: 1,
-    paddingTop: vs(62),
+    paddingTop: ms(20),
     paddingBottom: vs(142),
   },
   header: {
-    paddingHorizontal: ms(49),
+    paddingHorizontal: ms(36.5),
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
   },
   headerText: {
     flex: 1,
+    marginTop: ms(40),
+    marginLeft: ms(-1),
     paddingRight: ms(8),
   },
   title: {
-    color: "#FFD4A1",
+    color: "#D8AD7B",
     fontFamily: "NanumSquareNeo",
-    fontSize: ms(29),
-    lineHeight: ms(39),
+    fontSize: ms(16),
+    lineHeight: ms(19),
   },
   subtitle: {
-    marginTop: vs(8),
-    color: "rgba(214, 130, 92, 0.78)",
+    marginTop: 5,
+    color: "rgba(219, 160, 174, 0.72)",
     fontFamily: "NanumSquareNeo",
-    fontSize: ms(15),
-    lineHeight: ms(23),
+    fontSize: ms(11),
+    lineHeight: ms(17),
   },
   bellButton: {
     width: ms(46),
     height: ms(46),
     alignItems: "center",
     justifyContent: "center",
-    marginTop: vs(6),
+    marginTop: ms(40),
   },
   weekPicker: {
     alignSelf: "center",
@@ -548,15 +582,16 @@ const styles = StyleSheet.create({
   },
   carouselWrap: {
     marginTop: vs(22),
-    height: vs(430),
+    height: vs(500),
   },
   carouselContent: {
-    paddingHorizontal: SIDE_PADDING,
+    paddingLeft: SIDE_PADDING,
+    paddingRight: SIDE_PADDING - CARD_GAP,
     alignItems: "center",
   },
   cardSlot: {
     width: CARD_WIDTH,
-    height: vs(414),
+    height: vs(484),
     marginRight: CARD_GAP,
   },
   leftEdge: {
@@ -591,6 +626,10 @@ const styles = StyleSheet.create({
   activeDot: {
     backgroundColor: "#FF944A",
     borderColor: "#FFB06F",
+  },
+  sharedCastingCard: {
+    flex: 1,
+    overflow: "hidden",
   },
   historyCard: {
     flex: 1,

@@ -4,6 +4,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  Image,
   ImageBackground,
   StyleSheet,
   ScrollView,
@@ -15,6 +16,8 @@ import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 
 const BASE_WIDTH = 393;
 const BASE_HEIGHT = 824;
+const UI_SCALE = 0.9;
+const TEXT_SCALE = 0.88;
 
 const COPY = {
   subtitle1: "\uD558\uB8E8\uB97C \uAE30\uB85D\uD558\uACE0,",
@@ -38,7 +41,7 @@ export default function LoginScreen({ navigation }) {
   const [password, setPassword] = useState("");
   const [secure, setSecure] = useState(true);
   const styles = createStyles(width, height, insets);
-  const scale = Math.min(width / BASE_WIDTH, height / BASE_HEIGHT);
+  const scale = Math.min(width / BASE_WIDTH, height / BASE_HEIGHT) * UI_SCALE;
   const iconSize = (value) => value * scale;
 
   const handleLogin = () => {
@@ -149,12 +152,17 @@ export default function LoginScreen({ navigation }) {
               <View style={styles.divider} />
             </View>
 
-            <TouchableOpacity activeOpacity={0.85} style={styles.kakaoButton}>
-              <View style={styles.kakaoIcon}>
-                <Text style={styles.kakaoIconText}>TALK</Text>
-              </View>
-
-              <Text style={styles.kakaoButtonText}>{COPY.kakaoLogin}</Text>
+            <TouchableOpacity
+              activeOpacity={0.85}
+              style={styles.kakaoButton}
+              accessibilityRole="button"
+              accessibilityLabel={COPY.kakaoLogin}
+            >
+              <Image
+                source={require("../../assets/icon/kakao_login.png")}
+                style={styles.kakaoLoginImage}
+                resizeMode="contain"
+              />
             </TouchableOpacity>
 
             <View style={styles.bottomLinks}>
@@ -181,10 +189,16 @@ export default function LoginScreen({ navigation }) {
 }
 
 const createStyles = (screenWidth, screenHeight, insets) => {
-  const scale = Math.min(Math.max(screenWidth / BASE_WIDTH, 0.82), 1.15);
-  const ms = (value) => value * scale;
-  const vs = ms;
-  const fs = ms;
+  const horizontalScale =
+    Math.min(Math.max(screenWidth / BASE_WIDTH, 0.82), 1.15) * UI_SCALE;
+  const verticalScale =
+    Math.min(
+      horizontalScale,
+      Math.min(Math.max(screenHeight / BASE_HEIGHT, 0.72), 1.05) * UI_SCALE
+    );
+  const ms = (value) => value * horizontalScale;
+  const vs = (value) => value * verticalScale;
+  const fs = (value) => value * verticalScale * TEXT_SCALE;
 
   return StyleSheet.create({
   background: {
@@ -271,7 +285,7 @@ const createStyles = (screenWidth, screenHeight, insets) => {
   },
 
   loginArea: {
-    width: "100%",
+    width: "94%",
     maxWidth: 704,
     alignSelf: "center",
     marginTop: "auto",
@@ -284,7 +298,7 @@ const createStyles = (screenWidth, screenHeight, insets) => {
     marginBottom: vs(14),
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(255, 244, 239, 0.9)",
+    backgroundColor: "rgba(255, 244, 239, 0.8)",
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.42)",
   },
@@ -308,14 +322,14 @@ const createStyles = (screenWidth, screenHeight, insets) => {
 
   loginButtonText: {
     fontFamily: "NanumSquareNeo",
-    fontSize: fs(20),
+    fontSize: fs(18),
     color: "#151216",
   },
 
   dividerArea: {
     flexDirection: "row",
     alignItems: "center",
-    marginVertical: vs(24),
+    marginVertical: vs(19),
   },
 
   divider: {
@@ -332,38 +346,20 @@ const createStyles = (screenWidth, screenHeight, insets) => {
   },
 
   kakaoButton: {
-    height: vs(57),
-    borderRadius: ms(13),
-    backgroundColor: "#FFE182",
-    flexDirection: "row",
+    width: "100%",
+    aspectRatio: 183 / 45,
     justifyContent: "center",
     alignItems: "center",
   },
 
-  kakaoIcon: {
-    width: ms(43),
-    height: vs(31),
-    borderRadius: ms(16),
-    backgroundColor: "#221D1F",
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: ms(49),
-  },
-
-  kakaoIconText: {
-    color: "#FFE182",
-    fontFamily: "NanumSquareNeo",
-    fontSize: fs(10),
-  },
-
-  kakaoButtonText: {
-    fontFamily: "NanumSquareNeo",
-    fontSize: fs(20),
-    color: "#151216",
+  kakaoLoginImage: {
+    width: "100%",
+    height: "100%",
   },
 
   bottomLinks: {
     marginTop: vs(29),
+    marginBottom: vs(18),
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
