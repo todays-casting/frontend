@@ -71,7 +71,7 @@ export default function HomeScreen({ navigation }) {
             </View>
 
             <TouchableOpacity activeOpacity={0.75} style={styles.bellButton}>
-              <Ionicons name="notifications-outline" size={33} color="#FFD08E" />
+              <Ionicons name="notifications-outline" size={22} color="#FFD08E" />
               <View style={styles.bellDot} />
             </TouchableOpacity>
           </View>
@@ -167,10 +167,10 @@ const createStyles = (screenWidth, screenHeight, insets) => {
   const scale = Math.min(Math.max(screenWidth / 393, 0.82), 1.15);
   const ms = (value) => value * scale;
   const vs = ms;
-  const cardHorizontalMargin = ms(13);
+  const cardHorizontalMargin = Math.max(ms(20), 20);
   const topPadding = Math.max(insets.top, ms(16)) + ms(20);
   const headerHeight = ms(69);
-  const headerGap = ms(20);
+  const headerGap = ms(50);
   const bottomClearance = 132 + Math.max(insets.bottom, ms(16));
   const cardRatio = 584 / 404;
   const availableCardHeight = Math.max(
@@ -214,22 +214,24 @@ const createStyles = (screenWidth, screenHeight, insets) => {
   },
   headerText: {
     flex: 1,
+    marginTop: ms(40),
+    paddingLeft: ms(12),
     paddingRight: ms(8),
   },
 
   greeting: {
     color: "#FFD596",
     fontFamily: "NanumSquareNeo",
-    fontSize: ms(24),
-    lineHeight: ms(34),
+    fontSize: ms(16),
+    lineHeight: ms(19),
   },
 
   question: {
-    marginTop: 10,
+    marginTop: 5,
     color: "rgba(255, 255, 255, 0.7)",
     fontFamily: "NanumSquareNeo",
-    fontSize: ms(17),
-    lineHeight: ms(25),
+    fontSize: ms(11),
+    lineHeight: ms(17),
   },
 
   bellButton: {
@@ -237,15 +239,15 @@ const createStyles = (screenWidth, screenHeight, insets) => {
     height: ms(52),
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 2,
+    marginTop: ms(30),
   },
 
   bellDot: {
     position: "absolute",
-    right: ms(7),
-    top: ms(4),
-    width: ms(10),
-    height: ms(10),
+    right: ms(13),
+    top: ms(10),
+    width: ms(6),
+    height: ms(6),
     borderRadius: ms(5),
     backgroundColor: "#FF7746",
   },
@@ -296,19 +298,19 @@ const createStyles = (screenWidth, screenHeight, insets) => {
   },
 
   cardPrompt: {
-    marginLeft: cs(9),
+    marginLeft: cs(7),
     color: "#FFB16C",
     fontFamily: "NanumSquareNeo",
-    fontSize: cs(16),
-    lineHeight: cs(23),
+    fontSize: cs(14),
+    lineHeight: cs(20),
   },
 
   cardHelp: {
-    marginTop: cs(10),
+    marginTop: cs(8),
     color: "rgba(255, 255, 255, 0.76)",
     fontFamily: "NanumSquareNeo",
-    fontSize: cs(13),
-    lineHeight: cs(21),
+    fontSize: cs(11),
+    lineHeight: cs(18),
     textAlign: "center",
   },
 
@@ -324,18 +326,18 @@ const createStyles = (screenWidth, screenHeight, insets) => {
   },
 
   ctaText: {
-    marginHorizontal: cs(14),
+    marginHorizontal: cs(11),
     color: "#FFBF80",
     fontFamily: "NanumSquareNeo",
-    fontSize: cs(20),
-    lineHeight: cs(30),
+    fontSize: cs(17),
+    lineHeight: cs(25),
   },
   });
 
   return {
     styles,
-    promptIconSize: Math.max(14, cs(23)),
-    ctaIconSize: Math.max(14, cs(23)),
-    arrowIconSize: Math.max(15, cs(25)),
+    promptIconSize: Math.max(12, cs(19)),
+    ctaIconSize: Math.max(12, cs(19)),
+    arrowIconSize: Math.max(13, cs(21)),
   };
 };
