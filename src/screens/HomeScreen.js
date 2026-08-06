@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -19,6 +19,7 @@ import Svg, {
   Path,
   Rect,
 } from "react-native-svg";
+import NotificationSheet from "../components/NotificationSheet";
 
 const CARD_PATH =
   "M31 1 H174 C179 14 188 21 202 21 C216 21 225 14 230 1 H373 C383 1 390 8 390 18 C399 19 404 26 404 36 V555 C404 565 398 571 388 571 C388 579 381 583 372 583 H32 C23 583 16 579 16 571 C6 571 0 565 0 555 V36 C0 26 6 20 14 18 C14 8 21 1 31 1 Z";
@@ -33,15 +34,27 @@ const COPY = {
   cardHelp:
     "AI\uAC00 \uB2F9\uC2E0\uC5D0\uAC8C \uC5B4\uC6B8\uB9AC\uB294 \uBC30\uC5ED\uC744 \uCC3E\uC544\uC918\uC694.",
   cta: "\uC9C0\uAE08 \uAE30\uB85D\uD558\uAE30",
+  resultEyebrow: "\u2726  CASTING RESULT  \u2726",
+  resultTitle: "\uB530\uB73B\uD55C \uBC24\uC758\n\uC8FC\uC778\uACF5",
+  resultGenre: "\uC624\uB298\uC758 \uC7A5\uB974",
+  resultGenreText: "Romance Drama",
+  resultRole: "\uC624\uB298\uC758 \uBC30\uC5ED",
+  resultRoleText: "\uC870\uC6A9\uD788 \uBE5B\uB098\uB294 \uC8FC\uC778\uACF5",
+  resultLine: "\uD55C\uC904 \uCE90\uC2A4\uD305",
+  resultLineText:
+    "\uC791\uC740 \uC9C4\uC2EC\uC774 \uD558\uB8E8\uB97C \uB530\uB73B\uD558\uAC8C \uBC14\uAFB8\uB294 \uC7A5\uBA74.",
+  resultCta: "\uB2E4\uC2DC \uAE30\uB85D\uD558\uAE30",
 };
 
-export default function HomeScreen({ navigation }) {
+export default function HomeScreen({ navigation, route }) {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const responsive = createStyles(width, height, insets);
   const { styles } = responsive;
+  const showResult = route?.params?.showResult;
+  const [notificationVisible, setNotificationVisible] = useState(false);
   const goInput = () => {
-    navigation?.navigate?.("Input");
+    navigation?.navigate?.("DailyRecord");
   };
 
   return (
@@ -70,8 +83,12 @@ export default function HomeScreen({ navigation }) {
               <Text style={styles.question}>{COPY.question}</Text>
             </View>
 
-            <TouchableOpacity activeOpacity={0.75} style={styles.bellButton}>
-              <Ionicons name="notifications-outline" size={22} color="#FFD08E" />
+            <TouchableOpacity
+              activeOpacity={0.75}
+              style={styles.bellButton}
+              onPress={() => setNotificationVisible(true)}
+            >
+              <Ionicons name="notifications-outline" size={33} color="#FFD08E" />
               <View style={styles.bellDot} />
             </TouchableOpacity>
           </View>
@@ -125,19 +142,65 @@ export default function HomeScreen({ navigation }) {
             </Svg>
 
             <View style={styles.cardTextArea}>
-              <Text style={styles.cardEyebrow}>{COPY.cardEyebrow}</Text>
-              <Text style={styles.cardTitle}>{COPY.cardTitle}</Text>
+              <Text style={styles.cardEyebrow}>
+                {showResult ? COPY.resultEyebrow : COPY.cardEyebrow}
+              </Text>
+              <Text style={styles.cardTitle}>
+                {showResult ? COPY.resultTitle : COPY.cardTitle}
+              </Text>
 
-              <View style={styles.promptRow}>
-                <MaterialCommunityIcons
-                  name="note-edit-outline"
-                  size={responsive.promptIconSize}
-                  color="#FFAC66"
-                />
-                <Text style={styles.cardPrompt}>{COPY.cardPrompt}</Text>
-              </View>
+              {showResult ? (
+                <View style={styles.resultPanel}>
+                  <Svg
+                    width="100%"
+                    height="100%"
+                    viewBox="0 0 100 100"
+                    preserveAspectRatio="none"
+                    style={styles.resultPanelArtwork}
+                  >
+                    <Rect
+                      x="0.5"
+                      y="0.5"
+                      width="99"
+                      height="99"
+                      rx="6"
+                      ry="6"
+                      fill="rgba(23, 12, 42, 0.72)"
+                      stroke="rgba(255, 179, 107, 0.5)"
+                      strokeWidth="1"
+                    />
+                  </Svg>
+                  <ResultLine
+                    styles={styles}
+                    label={COPY.resultGenre}
+                    value={COPY.resultGenreText}
+                  />
+                  <ResultLine
+                    styles={styles}
+                    label={COPY.resultRole}
+                    value={COPY.resultRoleText}
+                  />
+                  <ResultLine
+                    styles={styles}
+                    label={COPY.resultLine}
+                    value={COPY.resultLineText}
+                    last
+                  />
+                </View>
+              ) : (
+                <>
+                  <View style={styles.promptRow}>
+                    <MaterialCommunityIcons
+                      name="note-edit-outline"
+                      size={responsive.promptIconSize}
+                      color="#FFAC66"
+                    />
+                    <Text style={styles.cardPrompt}>{COPY.cardPrompt}</Text>
+                  </View>
 
-              <Text style={styles.cardHelp}>{COPY.cardHelp}</Text>
+                  <Text style={styles.cardHelp}>{COPY.cardHelp}</Text>
+                </>
+              )}
             </View>
 
             <TouchableOpacity
@@ -150,7 +213,9 @@ export default function HomeScreen({ navigation }) {
                 size={responsive.ctaIconSize}
                 color="#FFBF80"
               />
-              <Text style={styles.ctaText}>{COPY.cta}</Text>
+              <Text style={styles.ctaText}>
+                {showResult ? COPY.resultCta : COPY.cta}
+              </Text>
               <Ionicons
                 name="arrow-forward"
                 size={responsive.arrowIconSize}
@@ -159,7 +224,21 @@ export default function HomeScreen({ navigation }) {
             </TouchableOpacity>
           </View>
       </ScrollView>
+
+      <NotificationSheet
+        visible={notificationVisible}
+        onClose={() => setNotificationVisible(false)}
+      />
     </ImageBackground>
+  );
+}
+
+function ResultLine({ styles, label, value, last }) {
+  return (
+    <View style={[styles.resultLineRow, last && styles.resultLineLast]}>
+      <Text style={styles.resultLabel}>{label}</Text>
+      <Text style={styles.resultValue}>{value}</Text>
+    </View>
   );
 }
 
@@ -311,6 +390,45 @@ const createStyles = (screenWidth, screenHeight, insets) => {
     fontFamily: "NanumSquareNeo",
     fontSize: cs(11),
     lineHeight: cs(18),
+    textAlign: "center",
+  },
+
+  resultPanel: {
+    width: "100%",
+    marginTop: cardHeight * 0.04,
+    position: "relative",
+    paddingHorizontal: cs(16),
+    paddingVertical: cs(8),
+    overflow: "hidden",
+  },
+
+  resultPanelArtwork: {
+    ...StyleSheet.absoluteFillObject,
+  },
+
+  resultLineRow: {
+    paddingVertical: cs(9),
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255, 211, 195, 0.15)",
+  },
+
+  resultLineLast: {
+    borderBottomWidth: 0,
+  },
+
+  resultLabel: {
+    color: "#FFB16C",
+    fontFamily: "NanumSquareNeo",
+    fontSize: cs(12),
+    lineHeight: cs(18),
+  },
+
+  resultValue: {
+    marginTop: cs(3),
+    color: "#FFE0BE",
+    fontFamily: "NanumSquareNeo",
+    fontSize: cs(14),
+    lineHeight: cs(21),
     textAlign: "center",
   },
 

@@ -13,7 +13,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import { CastingCardBack, CastingCardFront } from "./CalendarScreen";
+import NotificationSheet from "../components/NotificationSheet";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const scale = Math.min(Math.max(SCREEN_WIDTH / 393, 0.82), 1.15);
@@ -104,6 +104,7 @@ const DIARY_TEXT =
 export default function HistoryScreen() {
   const [activeIndex, setActiveIndex] = useState(0);
   const [backVisible, setBackVisible] = useState(false);
+  const [notificationVisible, setNotificationVisible] = useState(false);
   const [favoriteDates, setFavoriteDates] = useState(
     () => new Set(HISTORY_RECORDS.filter((record) => record.liked).map((record) => record.date))
   );
@@ -247,7 +248,11 @@ export default function HistoryScreen() {
             </Text>
             </View>
 
-            <TouchableOpacity activeOpacity={0.75} style={styles.bellButton}>
+            <TouchableOpacity
+              activeOpacity={0.75}
+              style={styles.bellButton}
+              onPress={() => setNotificationVisible(true)}
+            >
               <Ionicons name="notifications-outline" size={ms(31)} color="#FFB15D" />
             </TouchableOpacity>
           </View>
@@ -392,6 +397,10 @@ export default function HistoryScreen() {
             ))}
           </View>
         </ScrollView>
+        <NotificationSheet
+          visible={notificationVisible}
+          onClose={() => setNotificationVisible(false)}
+        />
       </SafeAreaView>
     </ImageBackground>
   );
