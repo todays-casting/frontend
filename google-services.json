@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "585272899951",
+    "project_id": "todayscasting-e7802",
+    "storage_bucket": "todayscasting-e7802.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:585272899951:android:cd7263a7c7a64f428b509a",
+        "android_client_info": {
+          "package_name": "com.todayscasting.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBDxuc4XBNC6yD4WAeeNoVGugxTEsr9Q5I"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
