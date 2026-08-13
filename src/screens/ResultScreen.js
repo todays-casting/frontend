@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Image,
@@ -13,21 +13,41 @@ import {
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import {
+  getTodayDateKey,
+  getTodayRecordState,
+  setTodayResultLiked,
+  subscribeTodayRecordState,
+} from "../services/todayRecordState";
 
-const RESULT = {
+// TODO(api-result): Replace this placeholder with the generated result returned
+// from the analysis API or shared result store once backend integration lands.
+const PLACEHOLDER_RESULT = {
   userName: "서연",
-  date: "2025.05.21",
   title: "첫사랑\n여주인공",
   genre: "로맨스 드라마",
   line: "너와 함께라면, 모든 날이 영화 같아.",
   scene: "해질 무렵, 함께 걸었던 골목길",
 };
 
-export default function ResultScreen({ navigation }) {
+const formatDisplayDate = (dateKey) => dateKey.replaceAll("-", ".");
+
+export default function ResultScreen({ navigation, route }) {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const { styles, sizes } = createStyles(width, height, insets);
-  const [liked, setLiked] = useState(false);
+  const [todayState, setTodayState] = useState(() => getTodayRecordState());
+  const result = useMemo(() => {
+    const date = todayState.resultDate || getTodayDateKey();
+
+    return {
+      ...PLACEHOLDER_RESULT,
+      date: formatDisplayDate(date),
+      ...route?.params?.result,
+    };
+  }, [route?.params?.result, todayState.resultDate]);
+
+  useEffect(() => subscribeTodayRecordState(setTodayState), []);
 
   const goBackHome = () => {
     navigation.navigate("Main", {
@@ -70,7 +90,7 @@ export default function ResultScreen({ navigation }) {
 
           <View style={styles.messageBlock}>
             <Text style={styles.messageTitle}>
-              ✦ {RESULT.userName}님, 오늘의 기록이 완성되었어요
+              ✦ {result.userName}님, 오늘의 기록이 완성되었어요
             </Text>
             <Text style={styles.messageSub}>당신만의 감성이 담긴 하루였어요.</Text>
           </View>
@@ -84,17 +104,17 @@ export default function ResultScreen({ navigation }) {
             <View style={styles.cardShade} />
             <View style={styles.cardTopNotch} />
 
-            <Text style={styles.cardDate}>{RESULT.date}</Text>
+            <Text style={styles.cardDate}>{result.date}</Text>
             <Text style={styles.cardEyebrow}>TODAY'S CASTING</Text>
-            <Text style={styles.cardTitle}>{RESULT.title}</Text>
+            <Text style={styles.cardTitle}>{result.title}</Text>
 
             <TouchableOpacity
               activeOpacity={0.78}
               style={styles.likeButton}
-              onPress={() => setLiked((current) => !current)}
+              onPress={() => setTodayResultLiked(!todayState.resultLiked)}
             >
               <Ionicons
-                name={liked ? "heart" : "heart-outline"}
+                name={todayState.resultLiked ? "heart" : "heart-outline"}
                 size={sizes.likeIcon}
                 color="#FFD69A"
               />
@@ -104,21 +124,21 @@ export default function ResultScreen({ navigation }) {
               <ResultRow
                 icon="heart-outline"
                 label="오늘의 장르"
-                value={RESULT.genre}
+                value={result.genre}
                 styles={styles}
                 sizes={sizes}
               />
               <ResultRow
                 icon="pencil-outline"
                 label="오늘의 한줄 기록"
-                value={RESULT.line}
+                value={result.line}
                 styles={styles}
                 sizes={sizes}
               />
               <ResultRow
                 icon="image-outline"
                 label="기억에 남은 장면"
-                value={RESULT.scene}
+                value={result.scene}
                 styles={styles}
                 sizes={sizes}
                 last

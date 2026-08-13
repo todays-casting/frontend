@@ -10,7 +10,15 @@ Notifications.setNotificationHandler({
   }),
 });
 
+const hasNotificationPermission = (permission) =>
+  permission.status === "granted" ||
+  permission.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL;
+
 export async function registerForPushNotificationsAsync() {
+  if (Platform.OS === "web") {
+    return null;
+  }
+
   if (Platform.OS === "android") {
     await Notifications.setNotificationChannelAsync("default", {
       name: "Default",
@@ -20,21 +28,18 @@ export async function registerForPushNotificationsAsync() {
     });
   }
 
-  const { status: existingStatus } = await Notifications.getPermissionsAsync();
-  let finalStatus = existingStatus;
+  let permission = await Notifications.getPermissionsAsync();
 
-  if (existingStatus !== "granted") {
-    const { status } = await Notifications.requestPermissionsAsync();
-    finalStatus = status;
+  if (!hasNotificationPermission(permission)) {
+    permission = await Notifications.requestPermissionsAsync();
   }
 
-  if (finalStatus !== "granted") {
+  if (!hasNotificationPermission(permission)) {
     console.warn("Push notification permission was not granted.");
     return null;
   }
 
   const token = await Notifications.getDevicePushTokenAsync();
-  console.log("FCM device push token:", token.data);
 
   return token.data;
 }
