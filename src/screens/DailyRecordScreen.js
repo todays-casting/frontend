@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Image,
   ImageBackground,
@@ -14,6 +14,11 @@ import {
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import {
+  getTodayRecordState,
+  setResultNoticeHidden,
+  subscribeTodayRecordState,
+} from "../services/todayRecordState";
 
 const CUSTOM_LIMIT = 10;
 
@@ -76,8 +81,23 @@ export default function DailyRecordScreen({ navigation }) {
   const [customKeyword, setCustomKeyword] = useState("");
   const [customMood, setCustomMood] = useState("");
   const [dialog, setDialog] = useState(null);
+  const [resultReady, setResultReady] = useState(
+    () => getTodayRecordState().resultReady
+  );
+  const [resultNoticeHidden, setLocalResultNoticeHidden] = useState(
+    () => getTodayRecordState().resultNoticeHidden
+  );
+  const [confirmVisible, setConfirmVisible] = useState(false);
+  const [skipConfirmNextTime, setSkipConfirmNextTime] = useState(false);
 
   const count = useMemo(() => diary.length, [diary]);
+
+  useEffect(() => {
+    return subscribeTodayRecordState((nextState) => {
+      setResultReady(nextState.resultReady);
+      setLocalResultNoticeHidden(nextState.resultNoticeHidden);
+    });
+  }, []);
 
   const toggleListItem = (setter) => (label) => {
     setter((current) => {
@@ -101,12 +121,7 @@ export default function DailyRecordScreen({ navigation }) {
     showDialog("임시저장 되었습니다");
   };
 
-  const startAnalysis = () => {
-    if (!diary.trim()) {
-      showDialog("오늘의 기록을 작성해주세요!");
-      return;
-    }
-
+  const goAnalysisLoading = () => {
     const rootNavigation = navigation.getParent?.();
 
     if (rootNavigation) {
@@ -115,6 +130,41 @@ export default function DailyRecordScreen({ navigation }) {
     }
 
     navigation.navigate("AnalysisLoading");
+  };
+
+  const confirmAnalysis = () => {
+    if (skipConfirmNextTime) {
+      setResultNoticeHidden(true);
+    }
+
+    setConfirmVisible(false);
+    goAnalysisLoading();
+  };
+
+  const startAnalysis = () => {
+    const rootNavigation = navigation.getParent?.();
+
+    if (resultReady) {
+      if (rootNavigation) {
+        rootNavigation.navigate("Result");
+        return;
+      }
+
+      navigation.navigate("Result");
+      return;
+    }
+
+    if (!diary.trim()) {
+      showDialog("오늘의 기록을 작성해주세요!");
+      return;
+    }
+
+    if (!resultNoticeHidden) {
+      setConfirmVisible(true);
+      return;
+    }
+
+    goAnalysisLoading();
   };
 
   return (
@@ -248,7 +298,7 @@ export default function DailyRecordScreen({ navigation }) {
             <Text style={styles.ctaSparkle}>{"✦"}</Text>
             <MaterialCommunityIcons name="movie-open" size={sizes.ctaIcon} color="#FFFFFF" />
             <Text style={styles.ctaText} numberOfLines={1} adjustsFontSizeToFit>
-              {COPY.cta}
+              {resultReady ? "오늘의 결과 보기" : COPY.cta}
             </Text>
             <Text style={styles.ctaSparkle}>{"✦"}</Text>
           </TouchableOpacity>
@@ -260,8 +310,73 @@ export default function DailyRecordScreen({ navigation }) {
           onClose={() => setDialog(null)}
           styles={styles}
         />
+
+        <ResultConfirmDialog
+          visible={confirmVisible}
+          checked={skipConfirmNextTime}
+          onToggleChecked={() => setSkipConfirmNextTime((current) => !current)}
+          onCancel={() => setConfirmVisible(false)}
+          onConfirm={confirmAnalysis}
+          styles={styles}
+          sizes={sizes}
+        />
       </SafeAreaView>
     </ImageBackground>
+  );
+}
+
+function ResultConfirmDialog({
+  visible,
+  checked,
+  onToggleChecked,
+  onCancel,
+  onConfirm,
+  styles,
+  sizes,
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+      <View style={styles.dialogOverlay}>
+        <View style={styles.confirmCard}>
+          <Text style={styles.dialogSparkle}>{"✦"}</Text>
+          <Text style={styles.confirmTitle}>오늘의 결과를 받을까요?</Text>
+          <Text style={styles.confirmMessage}>
+            결과를 받으면 오늘의 기록은 수정할 수 없어요.
+          </Text>
+
+          <TouchableOpacity
+            activeOpacity={0.76}
+            style={styles.checkboxRow}
+            onPress={onToggleChecked}
+          >
+            <View style={[styles.checkbox, checked && styles.checkboxChecked]}>
+              {checked && (
+                <Ionicons name="checkmark" size={sizes.checkboxIcon} color="#2A1434" />
+              )}
+            </View>
+            <Text style={styles.checkboxLabel}>다시 표시하지 않기</Text>
+          </TouchableOpacity>
+
+          <View style={styles.confirmButtons}>
+            <TouchableOpacity
+              activeOpacity={0.82}
+              style={[styles.confirmButton, styles.cancelButton]}
+              onPress={onCancel}
+            >
+              <Text style={styles.cancelButtonText}>취소</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              activeOpacity={0.86}
+              style={[styles.confirmButton, styles.acceptButton]}
+              onPress={onConfirm}
+            >
+              <Text style={styles.acceptButtonText}>결과 받기</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -387,6 +502,7 @@ const createStyles = (screenWidth, screenHeight, insets) => {
       headerIcon: ms(30),
       ctaIcon: ms(23),
       smallIcon: ms(18),
+      checkboxIcon: ms(17),
     },
     styles: StyleSheet.create({
       background: {
@@ -718,6 +834,99 @@ const createStyles = (screenWidth, screenHeight, insets) => {
         justifyContent: "center",
       },
       dialogButtonText: {
+        color: "#FFFFFF",
+        fontFamily: "NanumSquareNeo",
+        fontSize: ms(15),
+        lineHeight: ms(22),
+      },
+      confirmCard: {
+        width: "100%",
+        maxWidth: ms(340),
+        borderRadius: ms(20),
+        borderWidth: 1,
+        borderColor: "rgba(255, 163, 99, 0.76)",
+        backgroundColor: "rgba(26, 14, 45, 0.97)",
+        paddingHorizontal: ms(22),
+        paddingTop: ms(24),
+        paddingBottom: ms(18),
+        alignItems: "center",
+        shadowColor: "#FF8C55",
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.3,
+        shadowRadius: 18,
+        elevation: 18,
+      },
+      confirmTitle: {
+        marginTop: ms(9),
+        color: "#FFE0BE",
+        fontFamily: "NanumSquareNeo",
+        fontSize: ms(18),
+        lineHeight: ms(27),
+        textAlign: "center",
+      },
+      confirmMessage: {
+        marginTop: ms(8),
+        color: "rgba(255, 224, 190, 0.78)",
+        fontFamily: "NanumSquareNeo",
+        fontSize: ms(14),
+        lineHeight: ms(22),
+        textAlign: "center",
+      },
+      checkboxRow: {
+        alignSelf: "flex-start",
+        marginTop: ms(20),
+        minHeight: ms(34),
+        flexDirection: "row",
+        alignItems: "center",
+      },
+      checkbox: {
+        width: ms(22),
+        height: ms(22),
+        borderRadius: ms(6),
+        borderWidth: 1,
+        borderColor: "rgba(255, 196, 153, 0.7)",
+        alignItems: "center",
+        justifyContent: "center",
+      },
+      checkboxChecked: {
+        backgroundColor: "#FFD1A4",
+        borderColor: "#FFD1A4",
+      },
+      checkboxLabel: {
+        marginLeft: ms(10),
+        color: "rgba(255, 239, 220, 0.82)",
+        fontFamily: "NanumSquareNeo",
+        fontSize: ms(14),
+        lineHeight: ms(21),
+      },
+      confirmButtons: {
+        width: "100%",
+        marginTop: ms(20),
+        flexDirection: "row",
+        columnGap: ms(10),
+      },
+      confirmButton: {
+        flex: 1,
+        height: ms(46),
+        borderRadius: ms(23),
+        alignItems: "center",
+        justifyContent: "center",
+      },
+      cancelButton: {
+        borderWidth: 1,
+        borderColor: "rgba(255, 196, 153, 0.42)",
+        backgroundColor: "rgba(255, 255, 255, 0.06)",
+      },
+      acceptButton: {
+        backgroundColor: "#F56643",
+      },
+      cancelButtonText: {
+        color: "rgba(255, 239, 220, 0.85)",
+        fontFamily: "NanumSquareNeo",
+        fontSize: ms(15),
+        lineHeight: ms(22),
+      },
+      acceptButtonText: {
         color: "#FFFFFF",
         fontFamily: "NanumSquareNeo",
         fontSize: ms(15),

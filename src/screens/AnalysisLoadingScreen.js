@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { setTodayResultReady } from "../services/todayRecordState";
 
 const COPY = {
   eyebrow: "✦  분석 중이에요  ✦",
@@ -33,10 +34,8 @@ export default function AnalysisLoadingScreen({ navigation }) {
     }, 420);
 
     const doneTimer = setTimeout(() => {
-      navigation.replace("Main", {
-        screen: "Home",
-        params: { showResult: true },
-      });
+      setTodayResultReady(true);
+      navigation.replace("Result");
     }, 3600);
 
     return () => {

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
@@ -9,6 +9,10 @@ import CalendarScreen from "../screens/CalendarScreen";
 import HistoryScreen from "../screens/HistoryScreen";
 import DailyRecordScreen from "../screens/DailyRecordScreen";
 import MyPageScreen from "../screens/MyPageScreen";
+import {
+  getTodayRecordState,
+  subscribeTodayRecordState,
+} from "../services/todayRecordState";
 
 const Tab = createBottomTabNavigator();
 
@@ -50,6 +54,9 @@ function TabIcon({ routeName, focused }) {
 
 function CustomTabBar({ state, descriptors, navigation }) {
   const insets = useSafeAreaInsets();
+  const [todayState, setTodayState] = useState(() => getTodayRecordState());
+
+  useEffect(() => subscribeTodayRecordState(setTodayState), []);
 
   return (
     <View
@@ -77,7 +84,16 @@ function CustomTabBar({ state, descriptors, navigation }) {
               canPreventDefault: true,
             });
 
-            if (!focused && !event.defaultPrevented) {
+            if (event.defaultPrevented) {
+              return;
+            }
+
+            if (route.name === "DailyRecord" && todayState.resultReady) {
+              navigation.getParent()?.navigate("Result");
+              return;
+            }
+
+            if (!focused) {
               navigation.navigate(route.name, route.params);
             }
           };

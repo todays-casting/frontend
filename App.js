@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { useFonts } from "expo-font";
@@ -7,14 +7,22 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import LoginScreen from "./src/screens/LoginScreen";
 import BottomTabNavigator from "./src/navigation/BottomTabNavigator";
 import AnalysisLoadingScreen from "./src/screens/AnalysisLoadingScreen";
+import ResultScreen from "./src/screens/ResultScreen";
 import {
   ContactScreen,
   SettingsScreen,
 } from "./src/screens/MyPageDetailScreen";
+import { registerForPushNotificationsAsync } from "./src/services/notifications";
 
 const Stack = createNativeStackNavigator();
 
 export default function App() {
+  useEffect(() => {
+    registerForPushNotificationsAsync().catch((error) => {
+      console.warn("Failed to register push notifications:", error);
+    });
+  }, []);
+
   const [fontsLoaded] = useFonts({
     MaruBuriSemiBold: require("./assets/font/\uB9C8\uB8E8 \uBD80\uB9AC/MaruBuri-SemiBold.ttf"),
     NanumSquareNeo: require("./assets/font/\uB098\uB214\uC2A4\uD018\uC5B4 \uB124\uC624/NanumSquareNeo-bRg.ttf"),
@@ -37,6 +45,7 @@ export default function App() {
           <Stack.Screen name="Login" component={LoginScreen} />
           <Stack.Screen name="Main" component={BottomTabNavigator} />
           <Stack.Screen name="AnalysisLoading" component={AnalysisLoadingScreen} />
+          <Stack.Screen name="Result" component={ResultScreen} />
           <Stack.Screen name="Settings" component={SettingsScreen} />
           <Stack.Screen name="Contact" component={ContactScreen} />
         </Stack.Navigator>
