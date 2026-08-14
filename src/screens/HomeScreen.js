@@ -20,13 +20,13 @@ import Svg, {
   Rect,
 } from "react-native-svg";
 import NotificationSheet from "../components/NotificationSheet";
+import { useUser } from "../contexts/UserContext";
 
 const CARD_PATH =
   "M31 1 H174 C179 14 188 21 202 21 C216 21 225 14 230 1 H373 C383 1 390 8 390 18 C399 19 404 26 404 36 V555 C404 565 398 571 388 571 C388 579 381 583 372 583 H32 C23 583 16 579 16 571 C6 571 0 565 0 555 V36 C0 26 6 20 14 18 C14 8 21 1 31 1 Z";
 const STAGE_IMAGE = require("../../assets/images/home_stage.png");
 
 const COPY = {
-  hello: "\uC548\uB155\uD558\uC138\uC694, \uC11C\uC5F0\uB2D8 \uD83D\uDC4B",
   question: "\uC624\uB298 \uD558\uB8E8\uB294 \uC5B4\uB5A4 \uC774\uC57C\uAE30\uC778\uAC00\uC694?",
   cardEyebrow: "\u2726  TODAY\u2019S CASTING  \u2726",
   cardTitle: "\uC624\uB298 \uD558\uB8E8\uC758\n\uC8FC\uC778\uACF5\uC774 \uB418\uC5B4\uBCF4\uC138\uC694!",
@@ -47,6 +47,7 @@ const COPY = {
 };
 
 export default function HomeScreen({ navigation, route }) {
+  const { nickname } = useUser();
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const responsive = createStyles(width, height, insets);
@@ -79,7 +80,9 @@ export default function HomeScreen({ navigation, route }) {
       >
           <View style={styles.header}>
             <View style={styles.headerText}>
-              <Text style={styles.greeting}>{COPY.hello}</Text>
+              <Text style={styles.greeting}>
+                {nickname ? `안녕하세요, ${nickname}님 👋` : "안녕하세요 👋"}
+              </Text>
               <Text style={styles.question}>{COPY.question}</Text>
             </View>
 

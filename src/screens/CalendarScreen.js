@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
   Image,
@@ -24,6 +24,10 @@ import Svg, {
   Path,
   Rect,
 } from "react-native-svg";
+import calendarApi from "../api/calendar-api";
+import castingsApi from "../api/castings-api";
+import recordsApi from "../api/records-api";
+import { useUser } from "../contexts/UserContext";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const scale = Math.min(Math.max(SCREEN_WIDTH / 393, 0.82), 1.15);
@@ -37,8 +41,6 @@ const CASTING_CARD_PATH =
 const CASTING_CARD_BACKGROUND = require("../../assets/images/casting-card-sunset-background-v2.jpg");
 
 const DAYS = ["일", "월", "화", "수", "목", "금", "토"];
-const MOCK_RECORD_DAYS = [1, 13, 27, 30];
-
 const toDateKey = (date) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
     date.getDate()
@@ -84,6 +86,7 @@ const RECORD = {
 };
 
 export default function CalendarScreen({ navigation }) {
+  const { nickname } = useUser();
   const insets = useSafeAreaInsets();
   const today = useMemo(() => new Date(), []);
   const [visibleMonth, setVisibleMonth] = useState(
@@ -95,6 +98,12 @@ export default function CalendarScreen({ navigation }) {
   const [activeDate, setActiveDate] = useState(today);
   const [selectedDate, setSelectedDate] = useState(null);
   const [isBack, setIsBack] = useState(false);
+  const [monthlyMarkers, setMonthlyMarkers] = useState([]);
+  const [calendarError, setCalendarError] = useState("");
+  const [recordError, setRecordError] = useState("");
+  const [recordLoading, setRecordLoading] = useState(false);
+  const [selectedRecord, setSelectedRecord] = useState(null);
+  const [selectedCasting, setSelectedCasting] = useState(null);
   const [favoriteDates, setFavoriteDates] = useState(() => new Set());
   const flip = useRef(new Animated.Value(0)).current;
   const sheetTranslateY = useRef(new Animated.Value(vs(560))).current;
@@ -109,15 +118,18 @@ export default function CalendarScreen({ navigation }) {
       ),
     [today, visibleMonth]
   );
-  const recordDates = useMemo(() => {
-    const days = new Set([...MOCK_RECORD_DAYS, today.getDate()]);
-
-    return new Set(
-      [...days].map((day) =>
-        toDateKey(new Date(today.getFullYear(), today.getMonth(), day))
-      )
-    );
-  }, [today]);
+  const yearMonth = `${visibleMonth.getFullYear()}-${String(
+    visibleMonth.getMonth() + 1
+  ).padStart(2, "0")}`;
+  const recordDates = useMemo(
+    () =>
+      new Set(
+        monthlyMarkers
+          .filter((marker) => marker.hasRecord)
+          .map((marker) => marker.recordDate)
+      ),
+    [monthlyMarkers]
+  );
   const monthLabel = `${visibleMonth.getFullYear()}년 ${visibleMonth.getMonth() + 1}월`;
   const pickerYears = useMemo(
     () =>
@@ -135,6 +147,55 @@ export default function CalendarScreen({ navigation }) {
     visibleMonth.getMonth() === activeDate.getMonth()
       ? activeDateKey
       : null;
+  const selectedCardRecord = selectedCasting
+    ? {
+        title: selectedCasting.highlight || selectedCasting.characterPhrase,
+        genre: selectedCasting.genre,
+        role: selectedCasting.roleName,
+        scene: selectedCasting.scenePhrase,
+        line: selectedCasting.oneLineComment,
+      }
+    : RECORD;
+
+  useEffect(() => {
+    let active = true;
+
+    const loadMonthlyMarkers = async () => {
+      try {
+        setCalendarError("");
+        const markers = await calendarApi.getMonthlyMarkers(yearMonth);
+
+        if (!active) {
+          return;
+        }
+
+        setMonthlyMarkers(markers);
+        setFavoriteDates(
+          new Set(
+            markers
+              .filter((marker) => marker.hasRecord && marker.isFavorite)
+              .map((marker) => marker.recordDate)
+          )
+        );
+      } catch (error) {
+        if (!active) {
+          return;
+        }
+
+        setMonthlyMarkers([]);
+        setFavoriteDates(new Set());
+        setCalendarError(
+          error.response?.data?.message ?? "달력 기록을 불러오지 못했습니다."
+        );
+      }
+    };
+
+    loadMonthlyMarkers();
+
+    return () => {
+      active = false;
+    };
+  }, [yearMonth]);
 
   const frontRotate = flip.interpolate({
     inputRange: [0, 1],
@@ -146,7 +207,7 @@ export default function CalendarScreen({ navigation }) {
     outputRange: ["180deg", "360deg"],
   });
 
-  const openRecord = (day) => {
+  const openRecord = async (day) => {
     if (day.muted) {
       return;
     }
@@ -154,21 +215,59 @@ export default function CalendarScreen({ navigation }) {
     setActiveDate(day.date);
     setIsBack(false);
     flip.setValue(0);
+    setRecordError("");
 
     if (!recordDates.has(day.key ?? toDateKey(day.date))) {
       setSelectedDate(null);
+      setSelectedRecord(null);
+      setSelectedCasting(null);
       return;
     }
 
-    sheetTranslateY.setValue(vs(560));
-    setSelectedDate(day.date);
-    requestAnimationFrame(() => {
-      Animated.timing(sheetTranslateY, {
-        toValue: 0,
-        duration: 260,
-        useNativeDriver: true,
-      }).start();
-    });
+    try {
+      setRecordLoading(true);
+      const record = await recordsApi.getRecordByDate(day.key);
+
+      if (!record) {
+        setRecordError("해당 날짜의 기록이 없습니다.");
+        return;
+      }
+
+      if (record.status !== "COMPLETED") {
+        setRecordError("작성 완료된 기록만 캐스팅 카드를 볼 수 있습니다.");
+        return;
+      }
+
+      const casting = await castingsApi.getCastingByRecordId(record.id);
+      setSelectedRecord(record);
+      setSelectedCasting(casting);
+      setFavoriteDates((current) => {
+        const next = new Set(current);
+
+        if (casting.isFavorite) {
+          next.add(day.key);
+        } else {
+          next.delete(day.key);
+        }
+
+        return next;
+      });
+      sheetTranslateY.setValue(vs(560));
+      setSelectedDate(day.date);
+      requestAnimationFrame(() => {
+        Animated.timing(sheetTranslateY, {
+          toValue: 0,
+          duration: 260,
+          useNativeDriver: true,
+        }).start();
+      });
+    } catch (error) {
+      setRecordError(
+        error.response?.data?.message ?? "선택한 날짜의 카드를 불러오지 못했습니다."
+      );
+    } finally {
+      setRecordLoading(false);
+    }
   };
 
   const closeRecord = () => {
@@ -185,6 +284,8 @@ export default function CalendarScreen({ navigation }) {
     }).start(({ finished }) => {
       if (finished) {
         setSelectedDate(null);
+        setSelectedRecord(null);
+        setSelectedCasting(null);
         setIsBack(false);
         flip.setValue(0);
       }
@@ -284,7 +385,9 @@ export default function CalendarScreen({ navigation }) {
         >
           <View style={styles.header}>
             <View style={styles.headerText}>
-              <Text style={styles.greeting}>안녕하세요, 서연님 👋</Text>
+              <Text style={styles.greeting}>
+                {nickname ? `안녕하세요, ${nickname}님 👋` : "안녕하세요 👋"}
+              </Text>
               <Text
                 style={styles.subGreeting}
                 numberOfLines={1}
@@ -417,6 +520,16 @@ export default function CalendarScreen({ navigation }) {
 
             <View style={styles.monthDivider} />
 
+            {calendarError ? (
+              <Text selectable style={styles.calendarError}>{calendarError}</Text>
+            ) : null}
+            {recordLoading ? (
+              <Text style={styles.calendarError}>카드를 불러오는 중...</Text>
+            ) : null}
+            {recordError ? (
+              <Text selectable style={styles.calendarError}>{recordError}</Text>
+            ) : null}
+
             <View style={styles.daysGrid}>
               {calendarDays.map((date) => (
                 <TouchableOpacity
@@ -544,6 +657,7 @@ export default function CalendarScreen({ navigation }) {
               >
                 <CastingCardFront
                   date={selectedDate ? formatFullDate(selectedDate) : ""}
+                  record={selectedCardRecord}
                   isFavorite={isSelectedFavorite}
                   onToggleFavorite={toggleFavorite}
                   onFlip={toggleCardSide}
@@ -560,6 +674,7 @@ export default function CalendarScreen({ navigation }) {
               >
                 <CastingCardBack
                   date={selectedDate ? formatFullDate(selectedDate) : ""}
+                  diary={selectedRecord?.content ?? ""}
                   onFlip={toggleCardSide}
                 />
               </Animated.View>
@@ -962,6 +1077,14 @@ const styles = StyleSheet.create({
     marginTop: vs(8),
     height: 1,
     backgroundColor: "rgba(255, 214, 182, 0.14)",
+  },
+  calendarError: {
+    marginTop: vs(8),
+    color: "#FFB0B0",
+    fontFamily: "NanumSquareNeo",
+    fontSize: ms(11),
+    lineHeight: ms(16),
+    textAlign: "center",
   },
   daysGrid: {
     marginTop: vs(8),

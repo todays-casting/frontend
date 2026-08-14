@@ -13,6 +13,7 @@ import {
   getTodayRecordState,
   subscribeTodayRecordState,
 } from "../services/todayRecordState";
+import { UserProvider } from "../contexts/UserContext";
 
 const Tab = createBottomTabNavigator();
 
@@ -158,22 +159,24 @@ function CustomTabBar({ state, descriptors, navigation }) {
 
 export default function BottomTabNavigator() {
   return (
-    <Tab.Navigator
-      initialRouteName="Home"
-      tabBar={(props) => <CustomTabBar {...props} />}
-      screenOptions={{
-        headerShown: false,
-        sceneStyle: {
-          backgroundColor: "#160E2A",
-        },
-      }}
-    >
-      <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="Calendar" component={CalendarScreen} />
-      <Tab.Screen name="DailyRecord" component={DailyRecordScreen} />
-      <Tab.Screen name="History" component={HistoryScreen} />
-      <Tab.Screen name="MyPage" component={MyPageScreen} />
-    </Tab.Navigator>
+    <UserProvider>
+      <Tab.Navigator
+        initialRouteName="Home"
+        tabBar={(props) => <CustomTabBar {...props} />}
+        screenOptions={{
+          headerShown: false,
+          sceneStyle: {
+            backgroundColor: "#160E2A",
+          },
+        }}
+      >
+        <Tab.Screen name="Home" component={HomeScreen} />
+        <Tab.Screen name="Calendar" component={CalendarScreen} />
+        <Tab.Screen name="DailyRecord" component={DailyRecordScreen} />
+        <Tab.Screen name="History" component={HistoryScreen} />
+        <Tab.Screen name="MyPage" component={MyPageScreen} />
+      </Tab.Navigator>
+    </UserProvider>
   );
 }
 
