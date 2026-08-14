@@ -295,10 +295,6 @@ export default function CalendarScreen({ navigation }) {
               </Text>
             </View>
 
-            <TouchableOpacity activeOpacity={0.8} style={styles.writeButton}>
-              <Ionicons name="add" size={ms(14)} color="#FFD099" />
-              <Text style={styles.writeButtonText}>기록하기</Text>
-            </TouchableOpacity>
           </View>
 
           <Text style={styles.screenTitle}>나의 기록 달력</Text>
@@ -825,26 +821,6 @@ const styles = StyleSheet.create({
     fontFamily: "NanumSquareNeo",
     fontSize: ms(11),
     lineHeight: ms(17),
-  },
-  writeButton: {
-    minWidth: ms(68),
-    height: vs(26),
-    marginTop: ms(40),
-    paddingHorizontal: ms(7),
-    borderRadius: ms(13),
-    borderWidth: 1,
-    borderColor: "rgba(255, 83, 80, 0.72)",
-    backgroundColor: "rgba(103, 28, 45, 0.62)",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  writeButtonText: {
-    marginLeft: ms(2),
-    color: "#EBC08F",
-    fontFamily: "NanumSquareNeo",
-    fontSize: ms(10),
-    lineHeight: ms(14),
   },
   screenTitle: {
     marginTop: vs(25),
