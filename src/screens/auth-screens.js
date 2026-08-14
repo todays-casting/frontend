@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import authApi from "../api/auth-api";
 
 const BACKGROUND = require("../../assets/images/login_background.png");
 const BASE_WIDTH = 393;
@@ -114,31 +115,54 @@ function CompletionModal({ visible, title, message, onConfirm }) {
 }
 
 export function SignUpStepOneScreen({ navigation }) {
-  const [id, setId] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [passwordConfirm, setPasswordConfirm] = useState("");
-  const canContinue = id.trim().length > 0 && password.length >= 8 && password === passwordConfirm;
+  const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+  const canContinue =
+    email.includes("@") && password.length >= 8 && password === passwordConfirm;
+
+  const handleContinue = async () => {
+    try {
+      setLoading(true);
+      setErrorMessage("");
+      const { userId } = await authApi.signUpStepOne({
+        email: email.trim(),
+        password,
+        passwordConfirm,
+      });
+      navigation.navigate("SignUpStepTwo", { userId });
+    } catch (error) {
+      setErrorMessage(
+        error.response?.data?.message ?? "회원가입 요청에 실패했습니다. 다시 시도해주세요."
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <AuthScreenLayout
       navigation={navigation}
       step="STEP 1 OF 2"
       title="회원가입"
-      description="로그인에 사용할 아이디와 비밀번호를 설정해주세요."
+      description="로그인에 사용할 이메일과 비밀번호를 설정해주세요."
     >
       {(styles) => (
         <>
-          <Field styles={styles} label="아이디" icon="person-outline" value={id} onChangeText={setId} placeholder="아이디를 입력해주세요" />
+          <Field styles={styles} label="이메일" icon="mail-outline" value={email} onChangeText={setEmail} placeholder="이메일을 입력해주세요" keyboardType="email-address" />
           <Field styles={styles} label="비밀번호" icon="lock-closed-outline" value={password} onChangeText={setPassword} placeholder="8자 이상 입력해주세요" secureTextEntry />
           <Field styles={styles} label="비밀번호 확인" icon="shield-checkmark-outline" value={passwordConfirm} onChangeText={setPasswordConfirm} placeholder="비밀번호를 다시 입력해주세요" secureTextEntry />
           {passwordConfirm.length > 0 && password !== passwordConfirm ? (
             <Text style={styles.errorText}>비밀번호가 일치하지 않습니다.</Text>
           ) : null}
+          {errorMessage ? <Text selectable style={styles.errorText}>{errorMessage}</Text> : null}
           <PrimaryButton
             styles={styles}
-            label="다음"
-            disabled={!canContinue}
-            onPress={() => navigation.navigate("SignUpStepTwo", { id, password })}
+            label={loading ? "처리 중..." : "다음"}
+            disabled={!canContinue || loading}
+            onPress={handleContinue}
           />
         </>
       )}
@@ -146,17 +170,40 @@ export function SignUpStepOneScreen({ navigation }) {
   );
 }
 
-export function SignUpStepTwoScreen({ navigation }) {
+export function SignUpStepTwoScreen({ navigation, route }) {
   const [nickname, setNickname] = useState("");
   const [age, setAge] = useState("");
   const [gender, setGender] = useState("");
   const [completed, setCompleted] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+  const userId = route.params?.userId;
   const numericAge = Number(age);
   const canSubmit =
     nickname.trim().length > 0 &&
     numericAge > 0 &&
     numericAge < 120 &&
     gender.length > 0;
+
+  const handleSignUp = async () => {
+    try {
+      setLoading(true);
+      setErrorMessage("");
+      await authApi.signUpStepTwo({
+        userId,
+        nickname: nickname.trim(),
+        age: numericAge,
+        gender: gender === "남자" ? "MALE" : "FEMALE",
+      });
+      setCompleted(true);
+    } catch (error) {
+      setErrorMessage(
+        error.response?.data?.message ?? "회원가입 완료 요청에 실패했습니다."
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <AuthScreenLayout
@@ -200,10 +247,11 @@ export function SignUpStepTwoScreen({ navigation }) {
           </View>
           <PrimaryButton
             styles={styles}
-            label="가입 완료"
-            disabled={!canSubmit}
-            onPress={() => setCompleted(true)}
+            label={loading ? "처리 중..." : "가입 완료"}
+            disabled={!canSubmit || !userId || loading}
+            onPress={handleSignUp}
           />
+          {errorMessage ? <Text selectable style={styles.errorText}>{errorMessage}</Text> : null}
           <CompletionModal
             visible={completed}
             title="회원가입 완료"
@@ -223,11 +271,51 @@ export function FindPasswordScreen({ navigation }) {
   const [newPassword, setNewPassword] = useState("");
   const [passwordConfirm, setPasswordConfirm] = useState("");
   const [completed, setCompleted] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
   const canSend = email.includes("@");
   const canChange =
     temporaryPassword.length > 0 &&
     newPassword.length >= 8 &&
     newPassword === passwordConfirm;
+
+  const handleSendTemporaryPassword = async () => {
+    try {
+      setLoading(true);
+      setErrorMessage("");
+      await authApi.resetPassword({ email: email.trim() });
+      setSent(true);
+    } catch (error) {
+      setErrorMessage(
+        error.response?.data?.message ?? "임시비밀번호 발송에 실패했습니다."
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleChangePassword = async () => {
+    try {
+      setLoading(true);
+      setErrorMessage("");
+      await authApi.login({
+        email: email.trim(),
+        password: temporaryPassword,
+      });
+      await authApi.changePassword({
+        currentPassword: temporaryPassword,
+        newPassword,
+        newPasswordConfirm: passwordConfirm,
+      });
+      setCompleted(true);
+    } catch (error) {
+      setErrorMessage(
+        error.response?.data?.message ?? "비밀번호 변경에 실패했습니다."
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <AuthScreenLayout
@@ -254,10 +342,11 @@ export function FindPasswordScreen({ navigation }) {
               />
               <PrimaryButton
                 styles={styles}
-                label="임시비밀번호 받기"
-                disabled={!canSend}
-                onPress={() => setSent(true)}
+                label={loading ? "발송 중..." : "임시비밀번호 받기"}
+                disabled={!canSend || loading}
+                onPress={handleSendTemporaryPassword}
               />
+              {errorMessage ? <Text selectable style={styles.errorText}>{errorMessage}</Text> : null}
             </>
           ) : (
             <>
@@ -294,10 +383,11 @@ export function FindPasswordScreen({ navigation }) {
               ) : null}
               <PrimaryButton
                 styles={styles}
-                label="비밀번호 변경"
-                disabled={!canChange}
-                onPress={() => setCompleted(true)}
+                label={loading ? "변경 중..." : "비밀번호 변경"}
+                disabled={!canChange || loading}
+                onPress={handleChangePassword}
               />
+              {errorMessage ? <Text selectable style={styles.errorText}>{errorMessage}</Text> : null}
               <CompletionModal
                 visible={completed}
                 title="비밀번호 변경 완료"

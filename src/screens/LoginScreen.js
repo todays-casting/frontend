@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import authApi from "../api/auth-api";
 
 const BASE_WIDTH = 393;
 const BASE_HEIGHT = 824;
@@ -23,7 +24,7 @@ const COPY = {
   subtitle1: "\uD558\uB8E8\uB97C \uAE30\uB85D\uD558\uACE0,",
   subtitle2:
     "\uB2F9\uC2E0\uB9CC\uC758 \uC601\uD654 \uC18D \uBC30\uC5ED\uC744 \uB9CC\uB098\uBCF4\uC138\uC694.",
-  idPlaceholder: "\uC544\uC774\uB514\uB97C \uC785\uB825\uD574\uC8FC\uC138\uC694",
+  idPlaceholder: "\uC774\uBA54\uC77C\uC744 \uC785\uB825\uD574\uC8FC\uC138\uC694",
   passwordPlaceholder:
     "\uBE44\uBC00\uBC88\uD638\uB97C \uC785\uB825\uD574\uC8FC\uC138\uC694",
   login: "\uB85C\uADF8\uC778",
@@ -36,15 +37,28 @@ const COPY = {
 export default function LoginScreen({ navigation }) {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const [id, setId] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [secure, setSecure] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
   const styles = createStyles(width, height, insets);
   const scale = Math.min(width / BASE_WIDTH, height / BASE_HEIGHT) * UI_SCALE;
   const iconSize = (value) => value * scale;
 
-  const handleLogin = () => {
-    navigation.replace("Main");
+  const handleLogin = async () => {
+    try {
+      setLoading(true);
+      setErrorMessage("");
+      await authApi.login({ email: email.trim(), password });
+      navigation.replace("Main");
+    } catch (error) {
+      setErrorMessage(
+        error.response?.data?.message ?? "로그인에 실패했습니다. 이메일과 비밀번호를 확인해주세요."
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -98,12 +112,13 @@ export default function LoginScreen({ navigation }) {
               />
 
               <TextInput
-                value={id}
-                onChangeText={setId}
+                value={email}
+                onChangeText={setEmail}
                 placeholder={COPY.idPlaceholder}
                 placeholderTextColor="#827683"
                 style={styles.input}
                 autoCapitalize="none"
+                keyboardType="email-address"
               />
             </View>
 
@@ -141,9 +156,12 @@ export default function LoginScreen({ navigation }) {
               activeOpacity={0.85}
               style={styles.loginButton}
               onPress={handleLogin}
+              disabled={loading || !email.includes("@") || password.length === 0}
             >
-              <Text style={styles.loginButtonText}>{COPY.login}</Text>
+              <Text style={styles.loginButtonText}>{loading ? "로그인 중..." : COPY.login}</Text>
             </TouchableOpacity>
+
+            {errorMessage ? <Text selectable style={styles.loginError}>{errorMessage}</Text> : null}
 
             <View style={styles.dividerArea}>
               <View style={styles.divider} />
@@ -317,6 +335,15 @@ const createStyles = (screenWidth, screenHeight, insets) => {
     fontFamily: "NanumSquareNeo",
     fontSize: fs(18),
     color: "#151216",
+  },
+
+  loginError: {
+    marginTop: vs(10),
+    color: "#FFB0B0",
+    fontFamily: "NanumSquareNeo",
+    fontSize: fs(12),
+    lineHeight: fs(18),
+    textAlign: "center",
   },
 
   dividerArea: {
