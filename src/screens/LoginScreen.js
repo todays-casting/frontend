@@ -30,7 +30,6 @@ const COPY = {
   or: "\uB610\uB294",
   kakaoLogin: "\uCE74\uCE74\uC624 \uB85C\uADF8\uC778",
   signUp: "\uD68C\uC6D0\uAC00\uC785",
-  findId: "\uC544\uC774\uB514 \uCC3E\uAE30",
   findPassword: "\uBE44\uBC00\uBC88\uD638 \uCC3E\uAE30",
 };
 
@@ -166,19 +165,13 @@ export default function LoginScreen({ navigation }) {
             </TouchableOpacity>
 
             <View style={styles.bottomLinks}>
-              <TouchableOpacity>
+              <TouchableOpacity onPress={() => navigation.navigate("SignUpStepOne")}>
                 <Text style={styles.bottomLinkText}>{COPY.signUp}</Text>
               </TouchableOpacity>
 
               <Text style={styles.bottomDivider}>|</Text>
 
-              <TouchableOpacity>
-                <Text style={styles.bottomLinkText}>{COPY.findId}</Text>
-              </TouchableOpacity>
-
-              <Text style={styles.bottomDivider}>|</Text>
-
-              <TouchableOpacity>
+              <TouchableOpacity onPress={() => navigation.navigate("FindPassword")}>
                 <Text style={styles.bottomLinkText}>{COPY.findPassword}</Text>
               </TouchableOpacity>
             </View>
