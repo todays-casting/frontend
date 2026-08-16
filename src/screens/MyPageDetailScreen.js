@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   ImageBackground,
   Linking,
@@ -15,6 +15,7 @@ import {
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import notificationsApi from "../api/notifications-api";
 
 const COPY = {
   settingsTitle: "\uC124\uC815",
@@ -29,6 +30,7 @@ const COPY = {
   pushNotificationCopy: "\uC911\uC694\uD55C \uAE30\uB85D \uC18C\uC2DD\uC744 \uBC1B\uC544\uC694.",
   draftNotice: "\uC784\uC2DC\uC800\uC7A5 \uC548\uB0B4",
   draftNoticeCopy: "\uC800\uC7A5\uB418\uC9C0 \uC54A\uC740 \uAE30\uB85D\uC774 \uC788\uC744 \uB54C \uC54C\uB824\uC918\uC694.",
+  testNotification: "\uD14C\uC2A4\uD2B8 \uC54C\uB9BC \uBCF4\uB0B4\uAE30",
   contactTitle: "\uBB38\uC758\uD558\uAE30",
   contactEyebrow: "\uB3C4\uC6C0 \uC13C\uD130",
   contactLead: "\uD544\uC694\uD55C \uB3C4\uC6C0\uC744 \uD655\uC778\uD560 \uC218 \uC788\uB3C4\uB85D \uBB38\uC758 \uD56D\uBAA9\uC744 \uC900\uBE44\uD588\uC5B4\uC694.",
@@ -64,6 +66,83 @@ export function SettingsScreen({ navigation }) {
   const [pushNotification, setPushNotification] = useState(true);
   const [draftNotice, setDraftNotice] = useState(true);
   const [alertTime, setAlertTime] = useState("21:30");
+  const [savingSettings, setSavingSettings] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+
+    notificationsApi
+      .getNotificationSettings()
+      .then((settings) => {
+        if (!active || !settings) {
+          return;
+        }
+
+        setPushNotification(Boolean(settings.pushEnabled));
+        setRecordReminder(Boolean(settings.dailyReminderEnabled));
+        setAlertTime(settings.dailyReminderTime || "21:30");
+      })
+      .catch((error) => {
+        console.warn("Failed to load notification settings:", error);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const saveNotificationSettings = async (nextSettings) => {
+    const payload = {
+      pushEnabled: nextSettings.pushEnabled ?? pushNotification,
+      dailyReminderEnabled:
+        nextSettings.dailyReminderEnabled ?? recordReminder,
+      dailyReminderTime:
+        nextSettings.dailyReminderTime ?? alertTime,
+    };
+
+    setSavingSettings(true);
+    try {
+      const saved = await notificationsApi.updateNotificationSettings(payload);
+
+      if (saved) {
+        setPushNotification(Boolean(saved.pushEnabled));
+        setRecordReminder(Boolean(saved.dailyReminderEnabled));
+        setAlertTime(saved.dailyReminderTime || payload.dailyReminderTime);
+      }
+    } catch (error) {
+      console.warn("Failed to update notification settings:", error);
+    } finally {
+      setSavingSettings(false);
+    }
+  };
+
+  const updateRecordReminder = (value) => {
+    setRecordReminder(value);
+    saveNotificationSettings({ dailyReminderEnabled: value });
+  };
+
+  const updatePushNotification = (value) => {
+    setPushNotification(value);
+    saveNotificationSettings({ pushEnabled: value });
+  };
+
+  const saveAlertTime = () => {
+    if (/^\d{2}:\d{2}$/.test(alertTime)) {
+      saveNotificationSettings({ dailyReminderTime: alertTime });
+    }
+  };
+
+  const sendTestNotification = () => {
+    notificationsApi
+      .sendTestNotification({
+        title: "\uC624\uB298\uC758 \uCE90\uC2A4\uD305",
+        body: "\uD14C\uC2A4\uD2B8 \uC54C\uB9BC\uC774 \uB3C4\uCC29\uD588\uC5B4\uC694.",
+        data: { type: "TEST" },
+      })
+      .catch((error) => {
+        console.warn("Failed to send test notification:", error);
+      });
+  };
 
   return (
     <DetailShell
@@ -80,7 +159,11 @@ export function SettingsScreen({ navigation }) {
             <Text style={detailStyles.rowTitle}>{COPY.recordReminder}</Text>
             <Text style={detailStyles.rowCopy}>{COPY.recordReminderCopy}</Text>
           </View>
-          <ToneSwitch value={recordReminder} onValueChange={setRecordReminder} />
+          <ToneSwitch
+            value={recordReminder}
+            onValueChange={updateRecordReminder}
+            disabled={savingSettings}
+          />
         </View>
 
         <View style={[detailStyles.timeInputRow, !recordReminder && detailStyles.disabledWrap]}>
@@ -91,6 +174,7 @@ export function SettingsScreen({ navigation }) {
           <TextInput
             value={alertTime}
             onChangeText={(value) => setAlertTime(formatAlertTimeInput(value))}
+            onEndEditing={saveAlertTime}
             editable={recordReminder}
             placeholder={COPY.recordReminderPlaceholder}
             placeholderTextColor="rgba(255, 222, 204, 0.45)"
@@ -108,7 +192,13 @@ export function SettingsScreen({ navigation }) {
           icon="notifications-outline"
           title={COPY.pushNotification}
           copy={COPY.pushNotificationCopy}
-          right={<ToneSwitch value={pushNotification} onValueChange={setPushNotification} />}
+          right={
+            <ToneSwitch
+              value={pushNotification}
+              onValueChange={updatePushNotification}
+              disabled={savingSettings}
+            />
+          }
         />
         <SettingRow
           icon="save-outline"
@@ -118,6 +208,15 @@ export function SettingsScreen({ navigation }) {
           last
         />
       </View>
+
+      <TouchableOpacity
+        activeOpacity={0.86}
+        style={detailStyles.primaryButton}
+        onPress={sendTestNotification}
+      >
+        <Ionicons name="notifications-outline" size={18} color="#FFFFFF" />
+        <Text style={detailStyles.primaryButtonText}>{COPY.testNotification}</Text>
+      </TouchableOpacity>
     </DetailShell>
   );
 }

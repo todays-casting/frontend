@@ -1,9 +1,16 @@
 import client, { setAccessToken } from "./client";
+import { syncPushTokenWithServer } from "../services/notifications";
 
 const publicRequestConfig = {
   headers: {
     Authorization: undefined,
   },
+};
+
+const syncNotificationsAfterAuth = () => {
+  syncPushTokenWithServer().catch((error) => {
+    console.warn("Failed to sync push token:", error);
+  });
 };
 
 const signUpStepOne = async ({ email, password, passwordConfirm }) => {
@@ -24,6 +31,7 @@ const signUpStepTwo = async ({ userId, nickname, age, gender }) => {
   );
 
   setAccessToken(response.data.accessToken);
+  syncNotificationsAfterAuth();
   return response.data;
 };
 
@@ -35,6 +43,7 @@ const login = async ({ email, password }) => {
   );
 
   setAccessToken(response.data.accessToken);
+  syncNotificationsAfterAuth();
   return response.data;
 };
 
@@ -46,6 +55,7 @@ const kakaoLogin = async ({ accessToken }) => {
   );
 
   setAccessToken(response.data.accessToken);
+  syncNotificationsAfterAuth();
   return response.data;
 };
 

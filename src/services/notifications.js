@@ -1,5 +1,6 @@
 import { Platform } from "react-native";
 import * as Notifications from "expo-notifications";
+import notificationsApi from "../api/notifications-api";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -42,4 +43,14 @@ export async function registerForPushNotificationsAsync() {
   const token = await Notifications.getDevicePushTokenAsync();
 
   return token.data;
+}
+
+export async function syncPushTokenWithServer() {
+  const token = await registerForPushNotificationsAsync();
+
+  if (token) {
+    await notificationsApi.saveFcmToken(token);
+  }
+
+  return token;
 }

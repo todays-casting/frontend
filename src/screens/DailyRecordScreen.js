@@ -15,10 +15,12 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import {
+  getTodayDateKey,
   getTodayRecordState,
   setResultNoticeHidden,
   subscribeTodayRecordState,
 } from "../services/todayRecordState";
+import recordsApi from "../api/records-api";
 
 const CUSTOM_LIMIT = 10;
 
@@ -89,6 +91,7 @@ export default function DailyRecordScreen({ navigation }) {
   );
   const [confirmVisible, setConfirmVisible] = useState(false);
   const [skipConfirmNextTime, setSkipConfirmNextTime] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const count = useMemo(() => diary.length, [diary]);
 
@@ -167,6 +170,144 @@ export default function DailyRecordScreen({ navigation }) {
     goAnalysisLoading();
   };
 
+  const buildTagListForApi = (selected, customValue) => {
+    const selectedValues = Array.isArray(selected)
+      ? selected
+      : selected
+        ? [selected]
+        : [];
+    const custom = customValue.trim();
+
+    return [...selectedValues, custom]
+      .filter(Boolean)
+      .map((value) => value.slice(0, CUSTOM_LIMIT));
+  };
+
+  const buildRecordPayloadForApi = (status) => ({
+    recordDate: getTodayDateKey(),
+    content: diary.trim(),
+    mood: buildTagListForApi(emotion, customEmotion),
+    moodTags: buildTagListForApi(mood, customMood).slice(0, 1),
+    activityTags: buildTagListForApi(keywords, customKeyword),
+    status,
+  });
+
+  const saveRecordForApi = async (status) => {
+    if (!diary.trim()) {
+      showDialog("\uC624\uB298 \uAE30\uB85D\uC744 \uC791\uC131\uD574\uC8FC\uC138\uC694!");
+      return null;
+    }
+
+    const payload = buildRecordPayloadForApi(status);
+
+    setSaving(true);
+    try {
+      const savedRecord = await recordsApi.createRecord(payload);
+
+      if (savedRecord?.id) {
+        return savedRecord;
+      }
+
+      return (await recordsApi.getRecordByDate(payload.recordDate)) ?? savedRecord;
+    } catch (error) {
+      if (error?.response?.status === 409) {
+        const existingRecord = await recordsApi.getRecordByDate(payload.recordDate);
+
+        if (existingRecord?.id) {
+          return await recordsApi.updateRecord(existingRecord.id, payload);
+        }
+      }
+
+      console.warn("Failed to save daily record:", error);
+      showDialog(
+        error?.response?.data?.message ||
+          "\uAE30\uB85D \uC800\uC7A5\uC5D0 \uC2E4\uD328\uD588\uC5B4\uC694. \uC7A0\uC2DC \uD6C4 \uB2E4\uC2DC \uC2DC\uB3C4\uD574\uC8FC\uC138\uC694."
+      );
+      return null;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const navigateAnalysisLoadingForApi = (recordId) => {
+    const rootNavigation = navigation.getParent?.();
+    const params = recordId ? { recordId } : undefined;
+
+    if (rootNavigation) {
+      rootNavigation.navigate("AnalysisLoading", params);
+      return;
+    }
+
+    navigation.navigate("AnalysisLoading", params);
+  };
+
+  const handleSaveForApi = async () => {
+    if (saving) {
+      return;
+    }
+
+    const record = await saveRecordForApi("DRAFT");
+
+    if (record !== null) {
+      showDialog("\uC784\uC2DC\uC800\uC7A5\uD588\uC5B4\uC694.");
+    }
+  };
+
+  const confirmAnalysisForApi = async () => {
+    if (saving) {
+      return;
+    }
+
+    if (skipConfirmNextTime) {
+      setResultNoticeHidden(true);
+    }
+
+    setConfirmVisible(false);
+    const record = await saveRecordForApi("COMPLETED");
+
+    if (record?.id) {
+      navigateAnalysisLoadingForApi(record.id);
+    } else if (record) {
+      showDialog("\uAE30\uB85D\uC740 \uC800\uC7A5\uB410\uC9C0\uB9CC \uACB0\uACFC \uC870\uD68C\uC5D0 \uD544\uC694\uD55C ID\uB97C \uBC1B\uC9C0 \uBABB\uD588\uC5B4\uC694.");
+    }
+  };
+
+  const startAnalysisForApi = async () => {
+    if (saving) {
+      return;
+    }
+
+    const rootNavigation = navigation.getParent?.();
+
+    if (resultReady) {
+      if (rootNavigation) {
+        rootNavigation.navigate("Result");
+        return;
+      }
+
+      navigation.navigate("Result");
+      return;
+    }
+
+    if (!diary.trim()) {
+      showDialog("\uC624\uB298 \uAE30\uB85D\uC744 \uC791\uC131\uD574\uC8FC\uC138\uC694!");
+      return;
+    }
+
+    if (!resultNoticeHidden) {
+      setConfirmVisible(true);
+      return;
+    }
+
+    const record = await saveRecordForApi("COMPLETED");
+
+    if (record?.id) {
+      navigateAnalysisLoadingForApi(record.id);
+    } else if (record) {
+      showDialog("\uAE30\uB85D\uC740 \uC800\uC7A5\uB410\uC9C0\uB9CC \uACB0\uACFC \uC870\uD68C\uC5D0 \uD544\uC694\uD55C ID\uB97C \uBC1B\uC9C0 \uBABB\uD588\uC5B4\uC694.");
+    }
+  };
+
   return (
     <ImageBackground
       source={require("../../assets/images/login_background.png")}
@@ -208,7 +349,8 @@ export default function DailyRecordScreen({ navigation }) {
               <TouchableOpacity
                 activeOpacity={0.78}
                 style={styles.saveButton}
-                onPress={handleSave}
+                onPress={handleSaveForApi}
+                disabled={saving}
               >
                 <Text style={styles.saveText} numberOfLines={1}>
                   {COPY.save}
@@ -292,8 +434,9 @@ export default function DailyRecordScreen({ navigation }) {
         <View style={styles.fixedCtaWrap} pointerEvents="box-none">
           <TouchableOpacity
             activeOpacity={0.9}
-            style={styles.ctaButton}
-            onPress={startAnalysis}
+            style={[styles.ctaButton, saving && styles.disabledButton]}
+            onPress={startAnalysisForApi}
+            disabled={saving}
           >
             <Text style={styles.ctaSparkle}>{"✦"}</Text>
             <MaterialCommunityIcons name="movie-open" size={sizes.ctaIcon} color="#FFFFFF" />
@@ -316,7 +459,7 @@ export default function DailyRecordScreen({ navigation }) {
           checked={skipConfirmNextTime}
           onToggleChecked={() => setSkipConfirmNextTime((current) => !current)}
           onCancel={() => setConfirmVisible(false)}
-          onConfirm={confirmAnalysis}
+          onConfirm={confirmAnalysisForApi}
           styles={styles}
           sizes={sizes}
         />
@@ -769,6 +912,9 @@ const createStyles = (screenWidth, screenHeight, insets) => {
         alignItems: "center",
         justifyContent: "space-between",
         paddingHorizontal: ms(23),
+      },
+      disabledButton: {
+        opacity: 0.62,
       },
       ctaText: {
         flex: 1,

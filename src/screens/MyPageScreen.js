@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   ImageBackground,
   Modal,
@@ -13,10 +13,13 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import NotificationSheet from "../components/NotificationSheet";
+import mypageApi from "../api/mypage-api";
 
 const COPY = {
   title: "\uB9C8\uC774\uD398\uC774\uC9C0",
-  heroName: "\uC11C\uC5F0\uB2D8, \uC624\uB298\uB3C4",
+  heroName: "\uC0AC\uC6A9\uC790\uB2D8, \uC624\uB298\uB3C4",
+  loading: "\uB9C8\uC774\uD398\uC774\uC9C0\uB97C \uBD88\uB7EC\uC624\uB294 \uC911\uC774\uC5D0\uC694.",
+  loadFailed: "\uB9C8\uC774\uD398\uC774\uC9C0\uB97C \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC5B4\uC694.",
   heroLine: "\uB098\uB9CC\uC758 \uC774\uC57C\uAE30\uB97C \uAE30\uB85D\uD574\uC694",
   heroCopy:
     "\uC9C0\uAE08\uAE4C\uC9C0\uC758 \uC21C\uAC04\uB4E4\uC774, \uB354 \uBE5B\uB098\uB294 \uB0B4\uC77C\uC744 \uB9CC\uB4E4 \uAC70\uC608\uC694.",
@@ -26,25 +29,28 @@ const COPY = {
 
 const STATS = [
   {
+    key: "totalRecordCount",
     icon: "star-four-points",
     label: "\uAE30\uB85D\uD55C \uB0A0",
-    value: "27",
+    value: "0",
     unit: "\uC77C",
-    caption: "\uB9C8\uC9C0\uB9C9 \uAE30\uB85D\uC77C\uC790 25.05.21",
+    caption: "",
   },
   {
+    key: "continuousRecordDays",
     icon: "fire",
     label: "\uC5F0\uC18D \uAE30\uB85D",
-    value: "12",
+    value: "0",
     unit: "\uC77C",
-    caption: "\uCD5C\uACE0 15\uC77C",
+    caption: "",
   },
   {
+    key: "favoriteCastingCardCount",
     icon: "bookmark",
     label: "\uCC1C\uD55C \uCE74\uB4DC",
-    value: "38",
+    value: "0",
     unit: "\uAC1C",
-    caption: "\uAE30\uC5B5\uC5D0 \uB0A8\uB294 \uCD94\uC5B5",
+    caption: "",
   },
 ];
 
@@ -75,8 +81,80 @@ export default function MyPageScreen({ navigation }) {
   const { styles, sizes } = createStyles(width, height, insets);
   const [logoutVisible, setLogoutVisible] = useState(false);
   const [notificationVisible, setNotificationVisible] = useState(false);
+  const [profile, setProfile] = useState(null);
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [profileError, setProfileError] = useState(false);
 
   const rootNavigation = navigation.getParent?.();
+
+  useEffect(() => {
+    let active = true;
+
+    mypageApi
+      .getMyPage()
+      .then((myPage) => {
+        if (active) {
+          setProfile(myPage);
+          setProfileError(false);
+        }
+      })
+      .catch((error) => {
+        console.warn("Failed to load my page:", error);
+        if (active) {
+          setProfileError(true);
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setProfileLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const heroName = profile?.nickname
+    ? `${profile.nickname}\uB2D8, \uC624\uB298\uB3C4`
+    : COPY.heroName;
+  const profileStatusText = profileLoading
+    ? COPY.loading
+    : profileError
+      ? COPY.loadFailed
+      : null;
+
+  const stats = useMemo(
+    () =>
+      STATS.map((item) => {
+        if (item.key === "totalRecordCount") {
+          return {
+            ...item,
+            value: String(profile?.totalRecordCount ?? item.value),
+            caption: profile?.joinedDays != null
+              ? `\uAC00\uC785\uD55C \uC9C0 ${profile.joinedDays}\uC77C`
+              : item.caption,
+          };
+        }
+
+        if (item.key === "continuousRecordDays") {
+          return {
+            ...item,
+            value: String(profile?.continuousRecordDays ?? item.value),
+          };
+        }
+
+        if (item.key === "favoriteCastingCardCount") {
+          return {
+            ...item,
+            value: String(profile?.favoriteCastingCardCount ?? item.value),
+          };
+        }
+
+        return item;
+      }),
+    [profile]
+  );
 
   const openMenu = (item) => {
     if (item.action === "logout") {
@@ -134,8 +212,11 @@ export default function MyPageScreen({ navigation }) {
               resizeMode="cover"
             >
               <View style={styles.heroShade} />
-              <Text style={styles.heroTitle}>{COPY.heroName}</Text>
+              <Text style={styles.heroTitle}>{heroName}</Text>
               <Text style={styles.heroTitleSmall}>{COPY.heroLine}</Text>
+              {!!profileStatusText && (
+                <Text style={styles.profileStatus}>{profileStatusText}</Text>
+              )}
               <Text style={styles.heroCopy}>{COPY.heroCopy}</Text>
               <Ionicons
                 name="moon"
@@ -146,7 +227,7 @@ export default function MyPageScreen({ navigation }) {
             </ImageBackground>
 
             <View style={styles.statsRow}>
-              {STATS.map((item) => (
+              {stats.map((item) => (
                 <View key={item.label} style={styles.statCard}>
                   <View style={styles.statLabelRow}>
                     <MaterialCommunityIcons
@@ -371,6 +452,14 @@ const createStyles = (screenWidth, screenHeight, insets) => {
         fontFamily: "NanumSquareNeo",
         fontSize: ms(isWide ? 13 : 12),
         lineHeight: ms(isWide ? 20 : 19),
+        zIndex: 1,
+      },
+      profileStatus: {
+        marginTop: vs(7),
+        color: "rgba(255, 179, 107, 0.86)",
+        fontFamily: "NanumSquareNeo",
+        fontSize: ms(isWide ? 12 : 11),
+        lineHeight: ms(isWide ? 18 : 17),
         zIndex: 1,
       },
       moon: {
