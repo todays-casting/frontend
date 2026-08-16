@@ -1,5 +1,6 @@
 import { Platform } from "react-native";
 import * as Notifications from "expo-notifications";
+import notificationsApi from "../api/notifications-api";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -13,6 +14,29 @@ Notifications.setNotificationHandler({
 const hasNotificationPermission = (permission) =>
   permission.status === "granted" ||
   permission.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL;
+
+let pushTokenSubscription = null;
+
+export function stopPushTokenSync() {
+  pushTokenSubscription?.remove();
+  pushTokenSubscription = null;
+}
+
+export function startPushTokenSync() {
+  if (Platform.OS === "web" || pushTokenSubscription) {
+    return;
+  }
+
+  pushTokenSubscription = Notifications.addPushTokenListener((token) => {
+    if (!token?.data) {
+      return;
+    }
+
+    notificationsApi.saveFcmToken(token.data).catch((error) => {
+      console.warn("Failed to sync rotated push token:", error);
+    });
+  });
+}
 
 export async function registerForPushNotificationsAsync() {
   if (Platform.OS === "web") {
@@ -42,4 +66,16 @@ export async function registerForPushNotificationsAsync() {
   const token = await Notifications.getDevicePushTokenAsync();
 
   return token.data;
+}
+
+export async function syncPushTokenWithServer() {
+  const token = await registerForPushNotificationsAsync();
+
+  if (token) {
+    await notificationsApi.saveFcmToken(token);
+  }
+
+  startPushTokenSync();
+
+  return token;
 }

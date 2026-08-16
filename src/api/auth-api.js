@@ -1,9 +1,19 @@
 import client, { setAccessToken } from "./client";
+import {
+  stopPushTokenSync,
+  syncPushTokenWithServer,
+} from "../services/notifications";
 
 const publicRequestConfig = {
   headers: {
     Authorization: undefined,
   },
+};
+
+const syncNotificationsAfterAuth = () => {
+  syncPushTokenWithServer().catch((error) => {
+    console.warn("Failed to sync push token:", error);
+  });
 };
 
 const signUpStepOne = async ({ email, password, passwordConfirm }) => {
@@ -24,6 +34,7 @@ const signUpStepTwo = async ({ userId, nickname, age, gender }) => {
   );
 
   setAccessToken(response.data.accessToken);
+  syncNotificationsAfterAuth();
   return response.data;
 };
 
@@ -35,6 +46,7 @@ const login = async ({ email, password }) => {
   );
 
   setAccessToken(response.data.accessToken);
+  syncNotificationsAfterAuth();
   return response.data;
 };
 
@@ -46,6 +58,7 @@ const kakaoLogin = async ({ accessToken }) => {
   );
 
   setAccessToken(response.data.accessToken);
+  syncNotificationsAfterAuth();
   return response.data;
 };
 
@@ -64,6 +77,12 @@ const changePassword = async ({ currentPassword, newPassword, newPasswordConfirm
     newPasswordConfirm,
   });
   setAccessToken(null);
+  stopPushTokenSync();
+};
+
+const logout = () => {
+  setAccessToken(null);
+  stopPushTokenSync();
 };
 
 const authApi = {
@@ -73,6 +92,7 @@ const authApi = {
   kakaoLogin,
   resetPassword,
   changePassword,
+  logout,
 };
 
 export default authApi;
