@@ -15,6 +15,29 @@ const hasNotificationPermission = (permission) =>
   permission.status === "granted" ||
   permission.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL;
 
+let pushTokenSubscription = null;
+
+export function stopPushTokenSync() {
+  pushTokenSubscription?.remove();
+  pushTokenSubscription = null;
+}
+
+export function startPushTokenSync() {
+  if (Platform.OS === "web" || pushTokenSubscription) {
+    return;
+  }
+
+  pushTokenSubscription = Notifications.addPushTokenListener((token) => {
+    if (!token?.data) {
+      return;
+    }
+
+    notificationsApi.saveFcmToken(token.data).catch((error) => {
+      console.warn("Failed to sync rotated push token:", error);
+    });
+  });
+}
+
 export async function registerForPushNotificationsAsync() {
   if (Platform.OS === "web") {
     return null;
@@ -51,6 +74,8 @@ export async function syncPushTokenWithServer() {
   if (token) {
     await notificationsApi.saveFcmToken(token);
   }
+
+  startPushTokenSync();
 
   return token;
 }

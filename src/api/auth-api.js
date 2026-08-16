@@ -1,5 +1,8 @@
 import client, { setAccessToken } from "./client";
-import { syncPushTokenWithServer } from "../services/notifications";
+import {
+  stopPushTokenSync,
+  syncPushTokenWithServer,
+} from "../services/notifications";
 
 const publicRequestConfig = {
   headers: {
@@ -74,6 +77,12 @@ const changePassword = async ({ currentPassword, newPassword, newPasswordConfirm
     newPasswordConfirm,
   });
   setAccessToken(null);
+  stopPushTokenSync();
+};
+
+const logout = () => {
+  setAccessToken(null);
+  stopPushTokenSync();
 };
 
 const authApi = {
@@ -83,6 +92,7 @@ const authApi = {
   kakaoLogin,
   resetPassword,
   changePassword,
+  logout,
 };
 
 export default authApi;

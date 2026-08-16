@@ -13,6 +13,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import NotificationSheet from "../components/NotificationSheet";
+import authApi from "../api/auth-api";
 import mypageApi from "../api/mypage-api";
 
 const COPY = {
@@ -125,8 +126,17 @@ export default function MyPageScreen({ navigation }) {
       : null;
 
   const stats = useMemo(
-    () =>
-      STATS.map((item) => {
+    () => {
+      if (!profile || profileError) {
+        return STATS.map((item) => ({
+          ...item,
+          value: "\u2014",
+          unit: "",
+          caption: "",
+        }));
+      }
+
+      return STATS.map((item) => {
         if (item.key === "totalRecordCount") {
           return {
             ...item,
@@ -152,8 +162,9 @@ export default function MyPageScreen({ navigation }) {
         }
 
         return item;
-      }),
-    [profile]
+      });
+    },
+    [profile, profileError]
   );
 
   const openMenu = (item) => {
@@ -169,6 +180,7 @@ export default function MyPageScreen({ navigation }) {
 
   const confirmLogout = () => {
     setLogoutVisible(false);
+    authApi.logout();
     rootNavigation?.replace("Login");
   };
 

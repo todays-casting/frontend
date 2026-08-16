@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ImageBackground,
   Linking,
@@ -61,12 +61,33 @@ const formatAlertTimeInput = (value) => {
   return `${digits.slice(0, 2)}:${digits.slice(2)}`;
 };
 
+const isValidAlertTime = (value) => {
+  const match = /^(\d{2}):(\d{2})$/.exec(value);
+
+  if (!match) {
+    return false;
+  }
+
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+
+  return hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59;
+};
+
 export function SettingsScreen({ navigation }) {
   const [recordReminder, setRecordReminder] = useState(true);
   const [pushNotification, setPushNotification] = useState(true);
   const [draftNotice, setDraftNotice] = useState(true);
   const [alertTime, setAlertTime] = useState("21:30");
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
+  const settingsRef = useRef({
+    pushEnabled: true,
+    dailyReminderEnabled: true,
+    dailyReminderTime: "21:30",
+  });
+  const settingsSaveQueueRef = useRef(Promise.resolve());
+  const pendingSettingsSavesRef = useRef(0);
 
   useEffect(() => {
     let active = true;
@@ -78,12 +99,24 @@ export function SettingsScreen({ navigation }) {
           return;
         }
 
-        setPushNotification(Boolean(settings.pushEnabled));
-        setRecordReminder(Boolean(settings.dailyReminderEnabled));
-        setAlertTime(settings.dailyReminderTime || "21:30");
+        const loadedSettings = {
+          pushEnabled: Boolean(settings.pushEnabled),
+          dailyReminderEnabled: Boolean(settings.dailyReminderEnabled),
+          dailyReminderTime: settings.dailyReminderTime || "21:30",
+        };
+
+        settingsRef.current = loadedSettings;
+        setPushNotification(loadedSettings.pushEnabled);
+        setRecordReminder(loadedSettings.dailyReminderEnabled);
+        setAlertTime(loadedSettings.dailyReminderTime);
       })
       .catch((error) => {
         console.warn("Failed to load notification settings:", error);
+      })
+      .finally(() => {
+        if (active) {
+          setSettingsLoaded(true);
+        }
       });
 
     return () => {
@@ -93,41 +126,59 @@ export function SettingsScreen({ navigation }) {
 
   const saveNotificationSettings = async (nextSettings) => {
     const payload = {
-      pushEnabled: nextSettings.pushEnabled ?? pushNotification,
-      dailyReminderEnabled:
-        nextSettings.dailyReminderEnabled ?? recordReminder,
-      dailyReminderTime:
-        nextSettings.dailyReminderTime ?? alertTime,
+      ...settingsRef.current,
+      ...nextSettings,
     };
 
+    settingsRef.current = payload;
+    setPushNotification(payload.pushEnabled);
+    setRecordReminder(payload.dailyReminderEnabled);
+    setAlertTime(payload.dailyReminderTime);
+    pendingSettingsSavesRef.current += 1;
     setSavingSettings(true);
-    try {
-      const saved = await notificationsApi.updateNotificationSettings(payload);
 
-      if (saved) {
-        setPushNotification(Boolean(saved.pushEnabled));
-        setRecordReminder(Boolean(saved.dailyReminderEnabled));
-        setAlertTime(saved.dailyReminderTime || payload.dailyReminderTime);
-      }
-    } catch (error) {
-      console.warn("Failed to update notification settings:", error);
-    } finally {
-      setSavingSettings(false);
-    }
+    settingsSaveQueueRef.current = settingsSaveQueueRef.current
+      .catch(() => {})
+      .then(async () => {
+        try {
+          const saved = await notificationsApi.updateNotificationSettings(payload);
+
+          if (saved) {
+            const savedSettings = {
+              pushEnabled: Boolean(saved.pushEnabled),
+              dailyReminderEnabled: Boolean(saved.dailyReminderEnabled),
+              dailyReminderTime: saved.dailyReminderTime || payload.dailyReminderTime,
+            };
+
+            settingsRef.current = savedSettings;
+            setPushNotification(savedSettings.pushEnabled);
+            setRecordReminder(savedSettings.dailyReminderEnabled);
+            setAlertTime(savedSettings.dailyReminderTime);
+          }
+        } catch (error) {
+          console.warn("Failed to update notification settings:", error);
+        } finally {
+          pendingSettingsSavesRef.current -= 1;
+
+          if (pendingSettingsSavesRef.current === 0) {
+            setSavingSettings(false);
+          }
+        }
+      });
+
+    return settingsSaveQueueRef.current;
   };
 
   const updateRecordReminder = (value) => {
-    setRecordReminder(value);
     saveNotificationSettings({ dailyReminderEnabled: value });
   };
 
   const updatePushNotification = (value) => {
-    setPushNotification(value);
     saveNotificationSettings({ pushEnabled: value });
   };
 
   const saveAlertTime = () => {
-    if (/^\d{2}:\d{2}$/.test(alertTime)) {
+    if (isValidAlertTime(alertTime)) {
       saveNotificationSettings({ dailyReminderTime: alertTime });
     }
   };
@@ -143,6 +194,8 @@ export function SettingsScreen({ navigation }) {
         console.warn("Failed to send test notification:", error);
       });
   };
+
+  const settingsDisabled = !settingsLoaded || savingSettings;
 
   return (
     <DetailShell
@@ -162,11 +215,16 @@ export function SettingsScreen({ navigation }) {
           <ToneSwitch
             value={recordReminder}
             onValueChange={updateRecordReminder}
-            disabled={savingSettings}
+            disabled={settingsDisabled}
           />
         </View>
 
-        <View style={[detailStyles.timeInputRow, !recordReminder && detailStyles.disabledWrap]}>
+        <View
+          style={[
+            detailStyles.timeInputRow,
+            (!recordReminder || settingsDisabled) && detailStyles.disabledWrap,
+          ]}
+        >
           <View style={detailStyles.timeLabelRow}>
             <Ionicons name="time-outline" size={21} color="#FFB36B" />
             <Text style={detailStyles.timeLabel}>{COPY.recordReminderTime}</Text>
@@ -175,7 +233,7 @@ export function SettingsScreen({ navigation }) {
             value={alertTime}
             onChangeText={(value) => setAlertTime(formatAlertTimeInput(value))}
             onEndEditing={saveAlertTime}
-            editable={recordReminder}
+            editable={recordReminder && !settingsDisabled}
             placeholder={COPY.recordReminderPlaceholder}
             placeholderTextColor="rgba(255, 222, 204, 0.45)"
             keyboardType={Platform.select({
@@ -196,7 +254,7 @@ export function SettingsScreen({ navigation }) {
             <ToneSwitch
               value={pushNotification}
               onValueChange={updatePushNotification}
-              disabled={savingSettings}
+              disabled={settingsDisabled}
             />
           }
         />
@@ -204,7 +262,13 @@ export function SettingsScreen({ navigation }) {
           icon="save-outline"
           title={COPY.draftNotice}
           copy={COPY.draftNoticeCopy}
-          right={<ToneSwitch value={draftNotice} onValueChange={setDraftNotice} />}
+          right={
+            <ToneSwitch
+              value={draftNotice}
+              onValueChange={setDraftNotice}
+              disabled={settingsDisabled}
+            />
+          }
           last
         />
       </View>
@@ -213,6 +277,7 @@ export function SettingsScreen({ navigation }) {
         activeOpacity={0.86}
         style={detailStyles.primaryButton}
         onPress={sendTestNotification}
+        disabled={settingsDisabled}
       >
         <Ionicons name="notifications-outline" size={18} color="#FFFFFF" />
         <Text style={detailStyles.primaryButtonText}>{COPY.testNotification}</Text>

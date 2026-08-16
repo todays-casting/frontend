@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Image,
   ImageBackground,
@@ -92,6 +92,7 @@ export default function DailyRecordScreen({ navigation }) {
   const [confirmVisible, setConfirmVisible] = useState(false);
   const [skipConfirmNextTime, setSkipConfirmNextTime] = useState(false);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
 
   const count = useMemo(() => diary.length, [diary]);
 
@@ -193,6 +194,10 @@ export default function DailyRecordScreen({ navigation }) {
   });
 
   const saveRecordForApi = async (status) => {
+    if (savingRef.current) {
+      return null;
+    }
+
     if (!diary.trim()) {
       showDialog("\uC624\uB298 \uAE30\uB85D\uC744 \uC791\uC131\uD574\uC8FC\uC138\uC694!");
       return null;
@@ -200,6 +205,7 @@ export default function DailyRecordScreen({ navigation }) {
 
     const payload = buildRecordPayloadForApi(status);
 
+    savingRef.current = true;
     setSaving(true);
     try {
       const savedRecord = await recordsApi.createRecord(payload);
@@ -211,10 +217,14 @@ export default function DailyRecordScreen({ navigation }) {
       return (await recordsApi.getRecordByDate(payload.recordDate)) ?? savedRecord;
     } catch (error) {
       if (error?.response?.status === 409) {
-        const existingRecord = await recordsApi.getRecordByDate(payload.recordDate);
+        try {
+          const existingRecord = await recordsApi.getRecordByDate(payload.recordDate);
 
-        if (existingRecord?.id) {
-          return await recordsApi.updateRecord(existingRecord.id, payload);
+          if (existingRecord?.id) {
+            return await recordsApi.updateRecord(existingRecord.id, payload);
+          }
+        } catch (recoveryError) {
+          error = recoveryError;
         }
       }
 
@@ -225,6 +235,7 @@ export default function DailyRecordScreen({ navigation }) {
       );
       return null;
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
