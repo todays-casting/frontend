@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -20,7 +20,28 @@ import Svg, {
   Rect,
 } from "react-native-svg";
 import NotificationSheet from "../components/NotificationSheet";
+import castingsApi from "../api/castings-api";
 import { useUser } from "../contexts/UserContext";
+import { CastingCardFront } from "./CalendarScreen";
+import {
+  getNotificationState,
+  markAllNotificationsRead,
+  subscribeNotificationState,
+} from "../services/notificationState";
+import {
+  getTodayDateKey,
+  getTodayRecordState,
+  setTodayResultLiked,
+  setTodayResultReady,
+  subscribeTodayRecordState,
+} from "../services/todayRecordState";
+import { notifyFavoriteChanged, subscribeFavoriteChanges } from "../services/favoriteState";
+import { findNavigationWithRoute } from "../services/flowNavigation";
+import {
+  hasCompleteCastingImage,
+  resolveLatestCompleteCastingBefore,
+  resolveTodayCastingTarget,
+} from "../services/todayCastingResolver";
 
 const CARD_PATH =
   "M31 1 H174 C179 14 188 21 202 21 C216 21 225 14 230 1 H373 C383 1 390 8 390 18 C399 19 404 26 404 36 V555 C404 565 398 571 388 571 C388 579 381 583 372 583 H32 C23 583 16 579 16 571 C6 571 0 565 0 555 V36 C0 26 6 20 14 18 C14 8 21 1 31 1 Z";
@@ -34,6 +55,7 @@ const COPY = {
   cardHelp:
     "AI\uAC00 \uB2F9\uC2E0\uC5D0\uAC8C \uC5B4\uC6B8\uB9AC\uB294 \uBC30\uC5ED\uC744 \uCC3E\uC544\uC918\uC694.",
   cta: "\uC9C0\uAE08 \uAE30\uB85D\uD558\uAE30",
+  todayCta: "\uC0C8\uB85C\uC6B4 \uD558\uB8E8 \uCE90\uC2A4\uD305 \uBC1B\uAE30",
   resultEyebrow: "\u2726  CASTING RESULT  \u2726",
   resultTitle: "\uB530\uB73B\uD55C \uBC24\uC758\n\uC8FC\uC778\uACF5",
   resultGenre: "\uC624\uB298\uC758 \uC7A5\uB974",
@@ -46,16 +68,327 @@ const COPY = {
   resultCta: "\uB2E4\uC2DC \uAE30\uB85D\uD558\uAE30",
 };
 
+const pickFirst = (...values) =>
+  values.find((value) => value !== undefined && value !== null && value !== "");
+
+const formatDisplayDate = (dateKey) => dateKey.replaceAll("-", ".");
+
+const getRelativeDateKey = (offsetDays) => {
+  const now = new Date();
+  const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() + offsetDays);
+
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
+    date.getDate()
+  ).padStart(2, "0")}`;
+};
+
+const isCarryoverWindow = () => new Date().getHours() < 12;
+
+const canShowCarryoverCard = (recordDate) =>
+  isCarryoverWindow() && recordDate === getRelativeDateKey(-1);
+
+const normalizeHomeResult = (casting, fallbackRecordId) => {
+  if (!casting || typeof casting !== "object") {
+    return null;
+  }
+
+  const title = pickFirst(
+    casting.title,
+    casting.roleName,
+    casting.characterName,
+    casting.role,
+    casting.castingTitle
+  );
+
+  if (!title) {
+    return null;
+  }
+
+  return {
+    ...casting,
+    recordId: pickFirst(casting.recordId, casting.dailyRecordId, fallbackRecordId),
+    dailyRecordId: pickFirst(casting.dailyRecordId, casting.recordId, fallbackRecordId),
+    title,
+    genre: pickFirst(casting.genre, casting.movieGenre, casting.todayGenre, ""),
+    line: pickFirst(casting.oneLineComment, casting.line, casting.quote, ""),
+    scene: pickFirst(casting.scenePhrase, casting.scene, casting.memorableScene, ""),
+    imageUrl: pickFirst(casting.imageUrl, casting.generatedImageUrl, ""),
+    isFavorite: Boolean(casting.isFavorite),
+  };
+};
+
 export default function HomeScreen({ navigation, route }) {
   const { nickname } = useUser();
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const responsive = createStyles(width, height, insets);
   const { styles } = responsive;
-  const showResult = route?.params?.showResult;
+  const [todayState, setTodayState] = useState(() => getTodayRecordState());
+  const [homeResult, setHomeResult] = useState(null);
+  const [todayScreen, setTodayScreen] = useState(null);
+  const [clockRefreshKey, setClockRefreshKey] = useState(0);
   const [notificationVisible, setNotificationVisible] = useState(false);
-  const goInput = () => {
-    navigation?.navigate?.("DailyRecord");
+  const [notificationState, setNotificationState] = useState(() =>
+    getNotificationState()
+  );
+  const resultCard = useMemo(
+    () => {
+      const routeResult = normalizeHomeResult(route?.params?.result);
+
+      return (
+        homeResult ??
+        (routeResult?.recordDate === getTodayDateKey() ? routeResult : null) ??
+        normalizeHomeResult(todayState.resultData)
+      );
+    },
+    [homeResult, route?.params?.result, todayState.resultData]
+  );
+  const statusAllowsResult =
+    todayScreen === null ? todayState.resultReady : todayScreen === "RESULT";
+  const resultCardDate = resultCard?.recordDate ?? null;
+  const resultCardIsToday = resultCardDate === getTodayDateKey();
+  const resultCardIsCarryover = !resultCardIsToday && canShowCarryoverCard(resultCardDate);
+  const hasResultCard =
+    Boolean(resultCard) &&
+    hasCompleteCastingImage(resultCard) &&
+    (resultCardIsToday ? statusAllowsResult : resultCardIsCarryover);
+  const resultRows = useMemo(
+    () => [
+      { icon: "movie-open-outline", label: "오늘의 장르", text: resultCard?.genre },
+      { icon: "pencil-outline", label: "오늘의 한줄 기록", text: resultCard?.line },
+      { icon: "image-outline", label: "기억에 남은 장면", text: resultCard?.scene },
+    ],
+    [resultCard]
+  );
+  const goInput = async () => {
+    const returnTo = { screen: "Home" };
+
+    try {
+      const target = await resolveTodayCastingTarget();
+      const recordId = target.recordId;
+      const recordDate = target.recordDate ?? getTodayDateKey();
+
+      if (target.screen === "RESULT" && target.casting) {
+        const normalized = normalizeHomeResult(target.casting, recordId);
+
+        if (normalized) {
+          const normalizedResult = { ...normalized, recordDate };
+
+          setHomeResult(normalizedResult);
+          setTodayResultReady(true, normalizedResult);
+        }
+
+        navigation?.navigate?.("Result", {
+          recordId,
+          dailyRecordId: recordId,
+          recordDate,
+          result: normalized
+            ? { ...normalized, recordDate }
+            : { ...target.casting, recordId, recordDate },
+          returnTo,
+        });
+        return;
+      }
+
+      if (["WAITING", "RESULT"].includes(target.screen) && recordId) {
+        const rootNavigation = findNavigationWithRoute(
+          navigation,
+          "AnalysisLoading"
+        );
+        const loadingParams = {
+          recordId,
+          recordDate,
+          returnTo,
+        };
+
+        if (rootNavigation) {
+          rootNavigation.navigate("AnalysisLoading", loadingParams);
+        } else {
+          navigation?.navigate?.("AnalysisLoading", loadingParams);
+        }
+        return;
+      }
+    } catch (error) {
+      console.warn("[HomeScreen] failed to resolve input target:", {
+        statusCode: error?.response?.status,
+        data: error?.response?.data,
+        message: error?.message,
+      });
+    }
+
+    navigation?.navigate?.("DailyRecord", {
+      recordDate: getTodayDateKey(),
+      returnTo,
+    });
+  };
+
+  useEffect(() => subscribeNotificationState(setNotificationState), []);
+  useEffect(() => subscribeTodayRecordState(setTodayState), []);
+  useEffect(() => {
+    const now = new Date();
+    const nextBoundary = new Date(now);
+
+    if (now.getHours() < 12) {
+      nextBoundary.setHours(12, 0, 1, 0);
+    } else {
+      nextBoundary.setDate(nextBoundary.getDate() + 1);
+      nextBoundary.setHours(0, 0, 1, 0);
+    }
+
+    const timer = setTimeout(
+      () => setClockRefreshKey((current) => current + 1),
+      Math.max(1000, nextBoundary.getTime() - now.getTime())
+    );
+
+    return () => clearTimeout(timer);
+  }, [clockRefreshKey]);
+  useEffect(
+    () =>
+      subscribeFavoriteChanges(({ recordId, isFavorite }) => {
+        if (typeof isFavorite !== "boolean") {
+          return;
+        }
+
+        setHomeResult((current) =>
+          String(current?.recordId) === String(recordId)
+            ? { ...current, isFavorite }
+            : current
+        );
+      }),
+    []
+  );
+
+  useEffect(() => {
+    let active = true;
+
+    const loadTodayResult = async () => {
+      try {
+        const target = await resolveTodayCastingTarget();
+
+        if (!active) {
+          return;
+        }
+
+        setTodayScreen(target.screen ?? null);
+
+        if (target.screen !== "RESULT" || !target.casting) {
+          setTodayResultReady(false);
+
+          if (!isCarryoverWindow()) {
+            setHomeResult(null);
+            return;
+          }
+
+          try {
+            const fallback = await resolveLatestCompleteCastingBefore(getTodayDateKey());
+
+            if (!active) {
+              return;
+            }
+
+            const normalized = normalizeHomeResult(fallback?.casting, fallback?.recordId);
+            const shouldShowFallback = canShowCarryoverCard(fallback?.recordDate);
+
+            setHomeResult(
+              normalized && shouldShowFallback
+                ? {
+                    ...normalized,
+                    recordDate: fallback.recordDate,
+                  }
+                : null
+            );
+          } catch (fallbackError) {
+            console.warn("[HomeScreen] failed to load recent casting:", {
+              statusCode: fallbackError?.response?.status,
+              data: fallbackError?.response?.data,
+              message: fallbackError?.message,
+            });
+            setHomeResult(null);
+          }
+          return;
+        }
+
+        const normalized = normalizeHomeResult(target.casting, target.recordId);
+
+        if (normalized) {
+          const normalizedResult = {
+            ...normalized,
+            recordDate: target.recordDate ?? getTodayDateKey(),
+          };
+
+          setHomeResult(normalizedResult);
+          setTodayResultReady(true, normalizedResult);
+        }
+      } catch (error) {
+        console.warn("[HomeScreen] failed to load today casting:", {
+          statusCode: error?.response?.status,
+          data: error?.response?.data,
+          message: error?.message,
+        });
+      }
+    };
+
+    loadTodayResult();
+    const unsubscribeFocus = navigation?.addListener?.("focus", loadTodayResult);
+
+    return () => {
+      active = false;
+      unsubscribeFocus?.();
+    };
+  }, [navigation, clockRefreshKey]);
+
+  const goResult = () => {
+    if (!resultCard) {
+      return;
+    }
+
+    if (!resultCardIsToday) {
+      goInput();
+      return;
+    }
+
+    const recordDate = resultCard.recordDate ?? getTodayDateKey();
+
+    navigation?.navigate?.("Result", {
+      recordId: resultCard.recordId,
+      dailyRecordId: resultCard.dailyRecordId,
+      recordDate,
+      result: resultCard,
+    });
+  };
+
+  const toggleHomeFavorite = async () => {
+    if (!resultCard?.recordId) {
+      return;
+    }
+
+    const nextLiked = !resultCard.isFavorite;
+
+    setTodayResultLiked(nextLiked);
+    setHomeResult((current) =>
+      current ? { ...current, isFavorite: nextLiked } : current
+    );
+
+    try {
+      const updated = await castingsApi.toggleFavorite(resultCard.recordId);
+      const updatedLiked =
+        typeof updated?.isFavorite === "boolean" ? updated.isFavorite : nextLiked;
+
+      setTodayResultLiked(updatedLiked);
+      setHomeResult((current) =>
+        current ? { ...current, isFavorite: updatedLiked } : current
+      );
+      notifyFavoriteChanged({
+        recordId: resultCard.recordId,
+        dateKey: resultCard.recordDate ?? getTodayDateKey(),
+        isFavorite: updatedLiked,
+      });
+    } catch (error) {
+      setTodayResultLiked(resultCard.isFavorite);
+      setHomeResult((current) =>
+        current ? { ...current, isFavorite: resultCard.isFavorite } : current
+      );
+    }
   };
 
   return (
@@ -92,10 +425,46 @@ export default function HomeScreen({ navigation, route }) {
               onPress={() => setNotificationVisible(true)}
             >
               <Ionicons name="notifications-outline" size={33} color="#FFD08E" />
-              <View style={styles.bellDot} />
+              {notificationState.hasUnread && <View style={styles.bellDot} />}
             </TouchableOpacity>
           </View>
 
+          {hasResultCard ? (
+            <TouchableOpacity
+              activeOpacity={0.92}
+              style={styles.resultCastingCard}
+              onPress={resultCardIsToday ? goResult : goInput}
+            >
+              <View style={styles.resultCastingCardInner}>
+                <CastingCardFront
+                  date={formatDisplayDate(resultCard.recordDate ?? getTodayDateKey())}
+                  record={resultCard}
+                  eyebrow="TODAY’S CASTING"
+                  rows={resultRows}
+                  isFavorite={resultCard.isFavorite}
+                  onToggleFavorite={toggleHomeFavorite}
+                  onFlip={() => {}}
+                  showInfoPanel={false}
+                  showFlipButton={false}
+                />
+              </View>
+              {!resultCardIsToday && (
+                <View style={styles.carryoverCtaButton}>
+                  <MaterialCommunityIcons
+                    name="pencil"
+                    size={responsive.ctaIconSize}
+                    color="#FFBF80"
+                  />
+                  <Text style={styles.carryoverCtaText}>{COPY.todayCta}</Text>
+                  <Ionicons
+                    name="arrow-forward"
+                    size={responsive.arrowIconSize}
+                    color="#FFBF80"
+                  />
+                </View>
+              )}
+            </TouchableOpacity>
+          ) : (
           <View style={styles.card}>
             <Svg
               width="100%"
@@ -146,64 +515,22 @@ export default function HomeScreen({ navigation, route }) {
 
             <View style={styles.cardTextArea}>
               <Text style={styles.cardEyebrow}>
-                {showResult ? COPY.resultEyebrow : COPY.cardEyebrow}
+                {COPY.cardEyebrow}
               </Text>
               <Text style={styles.cardTitle}>
-                {showResult ? COPY.resultTitle : COPY.cardTitle}
+                {COPY.cardTitle}
               </Text>
 
-              {showResult ? (
-                <View style={styles.resultPanel}>
-                  <Svg
-                    width="100%"
-                    height="100%"
-                    viewBox="0 0 100 100"
-                    preserveAspectRatio="none"
-                    style={styles.resultPanelArtwork}
-                  >
-                    <Rect
-                      x="0.5"
-                      y="0.5"
-                      width="99"
-                      height="99"
-                      rx="6"
-                      ry="6"
-                      fill="rgba(23, 12, 42, 0.72)"
-                      stroke="rgba(255, 179, 107, 0.5)"
-                      strokeWidth="1"
-                    />
-                  </Svg>
-                  <ResultLine
-                    styles={styles}
-                    label={COPY.resultGenre}
-                    value={COPY.resultGenreText}
-                  />
-                  <ResultLine
-                    styles={styles}
-                    label={COPY.resultRole}
-                    value={COPY.resultRoleText}
-                  />
-                  <ResultLine
-                    styles={styles}
-                    label={COPY.resultLine}
-                    value={COPY.resultLineText}
-                    last
-                  />
-                </View>
-              ) : (
-                <>
-                  <View style={styles.promptRow}>
-                    <MaterialCommunityIcons
-                      name="note-edit-outline"
-                      size={responsive.promptIconSize}
-                      color="#FFAC66"
-                    />
-                    <Text style={styles.cardPrompt}>{COPY.cardPrompt}</Text>
-                  </View>
+              <View style={styles.promptRow}>
+                <MaterialCommunityIcons
+                  name="note-edit-outline"
+                  size={responsive.promptIconSize}
+                  color="#FFAC66"
+                />
+                <Text style={styles.cardPrompt}>{COPY.cardPrompt}</Text>
+              </View>
 
-                  <Text style={styles.cardHelp}>{COPY.cardHelp}</Text>
-                </>
-              )}
+              <Text style={styles.cardHelp}>{COPY.cardHelp}</Text>
             </View>
 
             <TouchableOpacity
@@ -217,7 +544,7 @@ export default function HomeScreen({ navigation, route }) {
                 color="#FFBF80"
               />
               <Text style={styles.ctaText}>
-                {showResult ? COPY.resultCta : COPY.cta}
+                {COPY.cta}
               </Text>
               <Ionicons
                 name="arrow-forward"
@@ -226,22 +553,16 @@ export default function HomeScreen({ navigation, route }) {
               />
             </TouchableOpacity>
           </View>
+          )}
       </ScrollView>
 
       <NotificationSheet
         visible={notificationVisible}
+        notifications={notificationState.notifications}
         onClose={() => setNotificationVisible(false)}
+        onMarkAllRead={markAllNotificationsRead}
       />
     </ImageBackground>
-  );
-}
-
-function ResultLine({ styles, label, value, last }) {
-  return (
-    <View style={[styles.resultLineRow, last && styles.resultLineLast]}>
-      <Text style={styles.resultLabel}>{label}</Text>
-      <Text style={styles.resultValue}>{value}</Text>
-    </View>
   );
 }
 
@@ -267,6 +588,13 @@ const createStyles = (screenWidth, screenHeight, insets) => {
   const cardScale = cardWidth / 367;
   const cs = (value) => value * cardScale;
   const ctaHeight = cardHeight * (72 / 584);
+  const resultBaseWidth = ms(312);
+  const resultBaseHeight = ms(484);
+  const resultCardScale = Math.min(
+    cardWidth / resultBaseWidth,
+    cardHeight / resultBaseHeight,
+    1.3
+  );
 
   const styles = StyleSheet.create({
   background: {
@@ -339,6 +667,52 @@ const createStyles = (screenWidth, screenHeight, insets) => {
     height: cardHeight,
     position: "relative",
     alignSelf: "center",
+  },
+
+  resultCastingCard: {
+    width: resultBaseWidth * resultCardScale,
+    height: resultBaseHeight * resultCardScale,
+    position: "relative",
+    alignSelf: "center",
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+
+  resultCastingCardInner: {
+    width: resultBaseWidth,
+    height: resultBaseHeight,
+    position: "relative",
+    overflow: "hidden",
+    transform: [{ scale: resultCardScale }],
+  },
+
+  carryoverCtaButton: {
+    position: "absolute",
+    left: Math.max(24, resultBaseWidth * resultCardScale * 0.12),
+    right: Math.max(24, resultBaseWidth * resultCardScale * 0.12),
+    bottom: Math.max(24, resultBaseHeight * resultCardScale * 0.055),
+    height: Math.max(46, ctaHeight * 0.82),
+    borderRadius: Math.max(23, ctaHeight * 0.41),
+    borderWidth: 1,
+    borderColor: "rgba(255, 174, 105, 0.78)",
+    backgroundColor: "rgba(37, 17, 62, 0.88)",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#FF8C55",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.22,
+    shadowRadius: 12,
+    elevation: 12,
+  },
+
+  carryoverCtaText: {
+    marginHorizontal: cs(11),
+    color: "#FFBF80",
+    fontFamily: "NanumSquareNeo",
+    fontSize: cs(16),
+    lineHeight: cs(24),
   },
 
   cardArtwork: {

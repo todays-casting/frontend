@@ -16,50 +16,28 @@ const COPY = {
   eyebrow: "\u2726  TODAY",
   title: "\uC54C\uB9BC",
   close: "\uBAA8\uB450 \uD655\uC778\uD588\uC5B4\uC694",
+  empty: "\uC0C8 \uC54C\uB9BC\uC774 \uC5C6\uC5B4\uC694.",
 };
 
-const NOTIFICATIONS = [
-  {
-    icon: "star-four-points",
-    title: "\uC624\uB298\uC758 \uCE90\uC2A4\uD305 \uACB0\uACFC\uAC00 \uC900\uBE44\uB410\uC5B4\uC694",
-    body: "\uB530\uB73B\uD55C \uBC24\uC758 \uC8FC\uC778\uACF5 \uCE74\uB4DC\uAC00 \uD648\uC5D0\uC11C \uAE30\uB2E4\uB9AC\uACE0 \uC788\uC5B4\uC694.",
-    time: "\uBC29\uAE08 \uC804",
-    unread: true,
-  },
-  {
-    icon: "clock-outline",
-    title: "\uAE30\uB85D \uC54C\uB9BC \uC2DC\uAC04\uC774\uC5D0\uC694",
-    body: "\uC9E7\uC740 \uD55C \uC904\uC774\uB77C\uB3C4 \uC624\uB298\uC758 \uC7A5\uBA74\uC744 \uB0A8\uACA8\uBCF4\uC138\uC694.",
-    time: "\uC624\uD6C4 9:30",
-    unread: true,
-  },
-  {
-    icon: "bookmark-outline",
-    title: "\uC9C0\uB09C \uCE74\uB4DC\uAC00 \uC800\uC7A5\uB410\uC5B4\uC694",
-    body: "\uB9C8\uC774\uD398\uC774\uC9C0\uC5D0\uC11C \uCC1C\uD55C \uCE74\uB4DC\uC640 \uAE30\uB85D \uD750\uB984\uC744 \uD655\uC778\uD560 \uC218 \uC788\uC5B4\uC694.",
-    time: "\uC5B4\uC81C",
-    unread: false,
-  },
-  {
-    icon: "filmstrip",
-    title: "\uD788\uC2A4\uD1A0\uB9AC\uC5D0 \uC0C8 \uC7A5\uBA74\uC774 \uCD94\uAC00\uB410\uC5B4\uC694",
-    body: "\uC774\uBC88 \uC8FC \uAE30\uB85D\uC744 \uCE74\uB4DC\uB85C \uB2E4\uC2DC \uB3CC\uC544\uBCFC \uC218 \uC788\uC5B4\uC694.",
-    time: "2\uC77C \uC804",
-    unread: false,
-  },
-  {
-    icon: "heart-outline",
-    title: "\uC624\uB298\uC758 \uAC10\uC815\uC774 \uAE30\uB85D\uB410\uC5B4\uC694",
-    body: "\uC120\uD0DD\uD55C \uAC10\uC815\uACFC \uD0A4\uC6CC\uB4DC\uAC00 \uB2E4\uC74C \uCE90\uC2A4\uD305\uC5D0 \uBC18\uC601\uB420 \uC608\uC815\uC774\uC5D0\uC694.",
-    time: "3\uC77C \uC804",
-    unread: false,
-  },
-];
+const getNotificationKey = (item, index) =>
+  item?.dedupeKey ??
+  item?.data?.dedupeKey ??
+  item?.id ??
+  `${item?.title ?? "notification"}-${item?.time ?? "time"}-${index}`;
 
-export default function NotificationSheet({ visible, onClose }) {
+export default function NotificationSheet({
+  visible,
+  notifications = [],
+  onClose,
+  onMarkAllRead,
+}) {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const styles = createStyles(width, height, insets);
+  const handleMarkAllRead = () => {
+    onMarkAllRead?.();
+    onClose?.();
+  };
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -84,24 +62,35 @@ export default function NotificationSheet({ visible, onClose }) {
             showsVerticalScrollIndicator
             bounces={false}
           >
-            {NOTIFICATIONS.map((item) => (
-              <View key={`${item.title}-${item.time}`} style={styles.item}>
-                <View style={[styles.iconWrap, item.unread && styles.unreadIconWrap]}>
-                  <MaterialCommunityIcons name={item.icon} size={20} color="#FFD29D" />
-                </View>
-                <View style={styles.itemTextWrap}>
-                  <View style={styles.itemTitleRow}>
-                    <Text style={styles.itemTitle}>{item.title}</Text>
-                    {item.unread && <View style={styles.unreadDot} />}
+            {notifications.length > 0 ? (
+              notifications.map((item, index) => (
+                <View key={getNotificationKey(item, index)} style={styles.item}>
+                  <View style={[styles.iconWrap, item.unread && styles.unreadIconWrap]}>
+                    <MaterialCommunityIcons
+                      name={item.icon || "bell-outline"}
+                      size={20}
+                      color="#FFD29D"
+                    />
                   </View>
-                  <Text style={styles.itemBody}>{item.body}</Text>
-                  <Text style={styles.itemTime}>{item.time}</Text>
+                  <View style={styles.itemTextWrap}>
+                    <View style={styles.itemTitleRow}>
+                      <Text style={styles.itemTitle}>{item.title}</Text>
+                      {item.unread && <View style={styles.unreadDot} />}
+                    </View>
+                    <Text style={styles.itemBody}>{item.body}</Text>
+                    <Text style={styles.itemTime}>{item.time}</Text>
+                  </View>
                 </View>
+              ))
+            ) : (
+              <View style={styles.emptyBox}>
+                <MaterialCommunityIcons name="bell-check-outline" size={24} color="#FFD29D" />
+                <Text style={styles.emptyText}>{COPY.empty}</Text>
               </View>
-            ))}
+            )}
           </ScrollView>
 
-          <TouchableOpacity activeOpacity={0.84} style={styles.primaryButton} onPress={onClose}>
+          <TouchableOpacity activeOpacity={0.84} style={styles.primaryButton} onPress={handleMarkAllRead}>
             <Text style={styles.primaryButtonText}>{COPY.close}</Text>
           </TouchableOpacity>
         </View>
@@ -246,6 +235,22 @@ const createStyles = (screenWidth, screenHeight, insets) => {
       fontFamily: "NanumSquareNeo",
       fontSize: ms(11),
       lineHeight: ms(16),
+    },
+    emptyBox: {
+      minHeight: ms(104),
+      borderRadius: ms(15),
+      borderWidth: 1,
+      borderColor: "rgba(255, 211, 195, 0.14)",
+      backgroundColor: "rgba(45, 24, 70, 0.62)",
+      alignItems: "center",
+      justifyContent: "center",
+      rowGap: ms(8),
+    },
+    emptyText: {
+      color: "rgba(255, 229, 205, 0.76)",
+      fontFamily: "NanumSquareNeo",
+      fontSize: ms(13),
+      lineHeight: ms(20),
     },
     primaryButton: {
       height: ms(46),

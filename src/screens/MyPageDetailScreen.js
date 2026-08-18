@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   ImageBackground,
   Linking,
-  Platform,
+  Modal,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -15,12 +15,13 @@ import {
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import authApi from "../api/auth-api";
 import notificationsApi from "../api/notifications-api";
 
 const COPY = {
-  settingsTitle: "\uC124\uC815",
-  settingsEyebrow: "\uAE30\uB85D \uD658\uACBD",
-  settingsLead: "\uD558\uB8E8 \uAE30\uB85D\uC744 \uC774\uC5B4\uAC00\uAE30 \uD3B8\uD558\uB3C4\uB85D \uC54C\uB9BC\uACFC \uC800\uC7A5 \uBC29\uC2DD\uC744 \uC870\uC815\uD574\uC694.",
+  settingsTitle: "\uC54C\uB9BC\uC124\uC815",
+  settingsEyebrow: "\uC54C\uB9BC \uD658\uACBD",
+  settingsLead: "\uD558\uB8E8 \uAE30\uB85D\uACFC \uCE90\uC2A4\uD305 \uC18C\uC2DD\uC744 \uB193\uCE58\uC9C0 \uC54A\uB3C4\uB85D \uC54C\uB9BC \uBC29\uC2DD\uC744 \uC870\uC815\uD574\uC694.",
   recordReminder: "\uAE30\uB85D \uC54C\uB9BC",
   recordReminderCopy: "\uD558\uB8E8\uB97C \uC815\uB9AC\uD560 \uC2DC\uAC04\uC744 \uC54C\uB824\uC918\uC694.",
   recordReminderTime: "\uC54C\uB9BC \uC2DC\uAC04",
@@ -30,7 +31,15 @@ const COPY = {
   pushNotificationCopy: "\uC911\uC694\uD55C \uAE30\uB85D \uC18C\uC2DD\uC744 \uBC1B\uC544\uC694.",
   draftNotice: "\uC784\uC2DC\uC800\uC7A5 \uC548\uB0B4",
   draftNoticeCopy: "\uC800\uC7A5\uB418\uC9C0 \uC54A\uC740 \uAE30\uB85D\uC774 \uC788\uC744 \uB54C \uC54C\uB824\uC918\uC694.",
-  testNotification: "\uD14C\uC2A4\uD2B8 \uC54C\uB9BC \uBCF4\uB0B4\uAE30",
+  timeCancel: "\uCDE8\uC18C",
+  timeSave: "\uC801\uC6A9\uD558\uAE30",
+  accountTitle: "\uACC4\uC815 \uC124\uC815",
+  accountEyebrow: "\uACC4\uC815 \uAD00\uB9AC",
+  accountLead: "\uC548\uC804\uD55C \uACC4\uC815 \uC0AC\uC6A9\uC744 \uC704\uD574 \uD544\uC694\uD55C \uC815\uBCF4\uB97C \uAD00\uB9AC\uD574\uC694.",
+  passwordChange: "\uBE44\uBC00\uBC88\uD638 \uBCC0\uACBD",
+  passwordChangeCopy: "\uD604\uC7AC \uBE44\uBC00\uBC88\uD638\uB85C \uC0C8 \uBE44\uBC00\uBC88\uD638\uB97C \uC124\uC815\uD574\uC694.",
+  withdraw: "\uD0C8\uD1F4\uD558\uAE30",
+  withdrawCopy: "\uC11C\uBE44\uC2A4 \uC774\uC6A9\uC744 \uB9C8\uBB34\uB9AC\uD560 \uB54C \uD655\uC778\uD574\uC694.",
   contactTitle: "\uBB38\uC758\uD558\uAE30",
   contactEyebrow: "\uB3C4\uC6C0 \uC13C\uD130",
   contactLead: "\uD544\uC694\uD55C \uB3C4\uC6C0\uC744 \uD655\uC778\uD560 \uC218 \uC788\uB3C4\uB85D \uBB38\uC758 \uD56D\uBAA9\uC744 \uC900\uBE44\uD588\uC5B4\uC694.",
@@ -51,40 +60,48 @@ const openContactMail = (topic) => {
   Linking.openURL(`mailto:?subject=${subject}`);
 };
 
-const formatAlertTimeInput = (value) => {
-  const digits = value.replace(/\D/g, "").slice(0, 4);
+const HOURS = Array.from({ length: 24 }, (_, index) => index);
+const MINUTES = Array.from({ length: 60 }, (_, index) => index);
 
-  if (digits.length <= 2) {
-    return digits;
+const padTime = (value) => String(value).padStart(2, "0");
+
+const normalizeAlertTime = (value) => {
+  if (typeof value !== "string") {
+    return "21:30";
   }
 
-  return `${digits.slice(0, 2)}:${digits.slice(2)}`;
-};
-
-const isValidAlertTime = (value) => {
-  const match = /^(\d{2}):(\d{2})$/.exec(value);
+  const match = /^(\d{1,2}):(\d{2})(?::\d{2})?$/.exec(value.trim());
 
   if (!match) {
-    return false;
+    return "21:30";
   }
 
   const hour = Number(match[1]);
   const minute = Number(match[2]);
 
-  return hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59;
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+    return "21:30";
+  }
+
+  return `${padTime(hour)}:${padTime(minute)}`;
 };
+
+const toApiAlertTime = (value) => `${normalizeAlertTime(value)}:00`;
 
 export function SettingsScreen({ navigation }) {
   const [recordReminder, setRecordReminder] = useState(true);
   const [pushNotification, setPushNotification] = useState(true);
   const [draftNotice, setDraftNotice] = useState(true);
   const [alertTime, setAlertTime] = useState("21:30");
+  const [draftAlertTime, setDraftAlertTime] = useState("21:30");
+  const [timePickerVisible, setTimePickerVisible] = useState(false);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
   const settingsRef = useRef({
     pushEnabled: true,
     dailyReminderEnabled: true,
     dailyReminderTime: "21:30",
+    draftNoticeEnabled: true,
   });
   const settingsSaveQueueRef = useRef(Promise.resolve());
   const pendingSettingsSavesRef = useRef(0);
@@ -102,13 +119,15 @@ export function SettingsScreen({ navigation }) {
         const loadedSettings = {
           pushEnabled: Boolean(settings.pushEnabled),
           dailyReminderEnabled: Boolean(settings.dailyReminderEnabled),
-          dailyReminderTime: settings.dailyReminderTime || "21:30",
+          dailyReminderTime: normalizeAlertTime(settings.dailyReminderTime),
+          draftNoticeEnabled: settings.draftNoticeEnabled ?? true,
         };
 
         settingsRef.current = loadedSettings;
         setPushNotification(loadedSettings.pushEnabled);
         setRecordReminder(loadedSettings.dailyReminderEnabled);
         setAlertTime(loadedSettings.dailyReminderTime);
+        setDraftNotice(Boolean(loadedSettings.draftNoticeEnabled));
       })
       .catch((error) => {
         console.warn("Failed to load notification settings:", error);
@@ -133,7 +152,8 @@ export function SettingsScreen({ navigation }) {
     settingsRef.current = payload;
     setPushNotification(payload.pushEnabled);
     setRecordReminder(payload.dailyReminderEnabled);
-    setAlertTime(payload.dailyReminderTime);
+    setAlertTime(normalizeAlertTime(payload.dailyReminderTime));
+    setDraftNotice(Boolean(payload.draftNoticeEnabled));
     pendingSettingsSavesRef.current += 1;
     setSavingSettings(true);
 
@@ -141,19 +161,26 @@ export function SettingsScreen({ navigation }) {
       .catch(() => {})
       .then(async () => {
         try {
-          const saved = await notificationsApi.updateNotificationSettings(payload);
+          const saved = await notificationsApi.updateNotificationSettings({
+            ...payload,
+            dailyReminderTime: toApiAlertTime(payload.dailyReminderTime),
+          });
 
           if (saved) {
             const savedSettings = {
               pushEnabled: Boolean(saved.pushEnabled),
               dailyReminderEnabled: Boolean(saved.dailyReminderEnabled),
-              dailyReminderTime: saved.dailyReminderTime || payload.dailyReminderTime,
+              dailyReminderTime: normalizeAlertTime(
+                saved.dailyReminderTime || payload.dailyReminderTime
+              ),
+              draftNoticeEnabled: saved.draftNoticeEnabled ?? payload.draftNoticeEnabled,
             };
 
             settingsRef.current = savedSettings;
             setPushNotification(savedSettings.pushEnabled);
             setRecordReminder(savedSettings.dailyReminderEnabled);
             setAlertTime(savedSettings.dailyReminderTime);
+            setDraftNotice(Boolean(savedSettings.draftNoticeEnabled));
           }
         } catch (error) {
           console.warn("Failed to update notification settings:", error);
@@ -177,22 +204,33 @@ export function SettingsScreen({ navigation }) {
     saveNotificationSettings({ pushEnabled: value });
   };
 
-  const saveAlertTime = () => {
-    if (isValidAlertTime(alertTime)) {
-      saveNotificationSettings({ dailyReminderTime: alertTime });
-    }
+  const updateDraftNotice = (value) => {
+    saveNotificationSettings({ draftNoticeEnabled: value });
   };
 
-  const sendTestNotification = () => {
-    notificationsApi
-      .sendTestNotification({
-        title: "\uC624\uB298\uC758 \uCE90\uC2A4\uD305",
-        body: "\uD14C\uC2A4\uD2B8 \uC54C\uB9BC\uC774 \uB3C4\uCC29\uD588\uC5B4\uC694.",
-        data: { type: "TEST" },
-      })
-      .catch((error) => {
-        console.warn("Failed to send test notification:", error);
-      });
+  const openTimePicker = () => {
+    if (!recordReminder || settingsDisabled) {
+      return;
+    }
+
+    setDraftAlertTime(alertTime);
+    setTimePickerVisible(true);
+  };
+
+  const selectDraftHour = (hour) => {
+    const [, minute] = draftAlertTime.split(":");
+    setDraftAlertTime(`${padTime(hour)}:${minute || "00"}`);
+  };
+
+  const selectDraftMinute = (minute) => {
+    const [hour] = draftAlertTime.split(":");
+    setDraftAlertTime(`${hour || "21"}:${padTime(minute)}`);
+  };
+
+  const applyDraftTime = () => {
+    const nextTime = normalizeAlertTime(draftAlertTime);
+    setTimePickerVisible(false);
+    saveNotificationSettings({ dailyReminderTime: nextTime });
   };
 
   const settingsDisabled = !settingsLoaded || savingSettings;
@@ -219,32 +257,24 @@ export function SettingsScreen({ navigation }) {
           />
         </View>
 
-        <View
+        <TouchableOpacity
+          activeOpacity={0.78}
           style={[
             detailStyles.timeInputRow,
             (!recordReminder || settingsDisabled) && detailStyles.disabledWrap,
           ]}
+          onPress={openTimePicker}
+          disabled={!recordReminder || settingsDisabled}
         >
           <View style={detailStyles.timeLabelRow}>
             <Ionicons name="time-outline" size={21} color="#FFB36B" />
             <Text style={detailStyles.timeLabel}>{COPY.recordReminderTime}</Text>
           </View>
-          <TextInput
-            value={alertTime}
-            onChangeText={(value) => setAlertTime(formatAlertTimeInput(value))}
-            onEndEditing={saveAlertTime}
-            editable={recordReminder && !settingsDisabled}
-            placeholder={COPY.recordReminderPlaceholder}
-            placeholderTextColor="rgba(255, 222, 204, 0.45)"
-            keyboardType={Platform.select({
-              ios: "numbers-and-punctuation",
-              android: "numeric",
-              default: "numeric",
-            })}
-            maxLength={5}
-            style={detailStyles.timeInput}
-          />
-        </View>
+          <View style={detailStyles.timeValueWrap}>
+            <Text style={detailStyles.timeValue}>{alertTime}</Text>
+            <Ionicons name="chevron-forward" size={18} color="#E8B17C" />
+          </View>
+        </TouchableOpacity>
 
         <SettingRow
           icon="notifications-outline"
@@ -265,7 +295,7 @@ export function SettingsScreen({ navigation }) {
           right={
             <ToneSwitch
               value={draftNotice}
-              onValueChange={setDraftNotice}
+              onValueChange={updateDraftNotice}
               disabled={settingsDisabled}
             />
           }
@@ -273,15 +303,14 @@ export function SettingsScreen({ navigation }) {
         />
       </View>
 
-      <TouchableOpacity
-        activeOpacity={0.86}
-        style={detailStyles.primaryButton}
-        onPress={sendTestNotification}
-        disabled={settingsDisabled}
-      >
-        <Ionicons name="notifications-outline" size={18} color="#FFFFFF" />
-        <Text style={detailStyles.primaryButtonText}>{COPY.testNotification}</Text>
-      </TouchableOpacity>
+      <TimePickerModal
+        visible={timePickerVisible}
+        value={draftAlertTime}
+        onSelectHour={selectDraftHour}
+        onSelectMinute={selectDraftMinute}
+        onCancel={() => setTimePickerVisible(false)}
+        onConfirm={applyDraftTime}
+      />
     </DetailShell>
   );
 }
@@ -316,6 +345,374 @@ export function ContactScreen({ navigation }) {
         <Text style={detailStyles.primaryButtonText}>{COPY.send}</Text>
       </TouchableOpacity>
     </DetailShell>
+  );
+}
+
+export function AccountSettingsScreen({ navigation }) {
+  const [passwordVisible, setPasswordVisible] = useState(false);
+  const [reauthNoticeVisible, setReauthNoticeVisible] = useState(false);
+  const [withdrawVisible, setWithdrawVisible] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [newPasswordConfirm, setNewPasswordConfirm] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [withdrawError, setWithdrawError] = useState("");
+  const [passwordSaving, setPasswordSaving] = useState(false);
+  const [withdrawSaving, setWithdrawSaving] = useState(false);
+
+  const closePasswordModal = () => {
+    if (passwordSaving) {
+      return;
+    }
+
+    setPasswordVisible(false);
+    setPasswordError("");
+    setCurrentPassword("");
+    setNewPassword("");
+    setNewPasswordConfirm("");
+  };
+
+  const changePassword = async () => {
+    if (!currentPassword || !newPassword || !newPasswordConfirm) {
+      setPasswordError("\uBE44\uBC00\uBC88\uD638\uB97C \uBAA8\uB450 \uC785\uB825\uD574\uC8FC\uC138\uC694.");
+      return;
+    }
+
+    if (newPassword.length < 8) {
+      setPasswordError("\uC0C8 \uBE44\uBC00\uBC88\uD638\uB294 8\uC790 \uC774\uC0C1\uC73C\uB85C \uC124\uC815\uD574\uC8FC\uC138\uC694.");
+      return;
+    }
+
+    if (newPassword !== newPasswordConfirm) {
+      setPasswordError("\uC0C8 \uBE44\uBC00\uBC88\uD638\uAC00 \uC11C\uB85C \uB2E4\uB985\uB2C8\uB2E4.");
+      return;
+    }
+
+    setPasswordSaving(true);
+    setPasswordError("");
+
+    try {
+      await authApi.changePassword({
+        currentPassword,
+        newPassword,
+        newPasswordConfirm,
+      });
+      setPasswordVisible(false);
+      setCurrentPassword("");
+      setNewPassword("");
+      setNewPasswordConfirm("");
+      setReauthNoticeVisible(true);
+    } catch (error) {
+      console.warn("Failed to change password:", error);
+      setPasswordError("\uBE44\uBC00\uBC88\uD638\uB97C \uBCC0\uACBD\uD558\uC9C0 \uBABB\uD588\uC5B4\uC694. \uC785\uB825\uAC12\uC744 \uD655\uC778\uD574\uC8FC\uC138\uC694.");
+    } finally {
+      setPasswordSaving(false);
+    }
+  };
+
+  const withdrawAccount = async () => {
+    setWithdrawSaving(true);
+    setWithdrawError("");
+
+    try {
+      await authApi.deleteAccount();
+      navigation.replace("Login");
+    } catch (error) {
+      console.warn("Failed to delete account:", error);
+      setWithdrawError("\uD0C8\uD1F4 \uCC98\uB9AC\uB97C \uC644\uB8CC\uD558\uC9C0 \uBABB\uD588\uC5B4\uC694. \uC7A0\uC2DC \uD6C4 \uB2E4\uC2DC \uC2DC\uB3C4\uD574\uC8FC\uC138\uC694.");
+      setWithdrawSaving(false);
+    }
+  };
+
+  return (
+    <DetailShell
+      navigation={navigation}
+      title={COPY.accountTitle}
+      eyebrow={COPY.accountEyebrow}
+      lead={COPY.accountLead}
+    >
+      <View style={detailStyles.card}>
+        <SettingRow
+          icon="lock-closed-outline"
+          title={COPY.passwordChange}
+          copy={COPY.passwordChangeCopy}
+          right={<Ionicons name="chevron-forward" size={21} color="#E8B17C" />}
+          onPress={() => setPasswordVisible(true)}
+        />
+        <SettingRow
+          icon="trash-outline"
+          title={COPY.withdraw}
+          copy={COPY.withdrawCopy}
+          right={<Ionicons name="chevron-forward" size={21} color="#E8B17C" />}
+          onPress={() => setWithdrawVisible(true)}
+          last
+        />
+      </View>
+
+      <PasswordChangeModal
+        visible={passwordVisible}
+        currentPassword={currentPassword}
+        newPassword={newPassword}
+        newPasswordConfirm={newPasswordConfirm}
+        error={passwordError}
+        saving={passwordSaving}
+        onChangeCurrentPassword={setCurrentPassword}
+        onChangeNewPassword={setNewPassword}
+        onChangeNewPasswordConfirm={setNewPasswordConfirm}
+        onCancel={closePasswordModal}
+        onConfirm={changePassword}
+      />
+      <ConfirmDialog
+        visible={reauthNoticeVisible}
+        title={"\uBE44\uBC00\uBC88\uD638\uAC00 \uBCC0\uACBD\uB410\uC5B4\uC694"}
+        copy={"\uACC4\uC815 \uBCF4\uC548\uC744 \uC704\uD574 \uC0C8 \uBE44\uBC00\uBC88\uD638\uB85C \uB2E4\uC2DC \uB85C\uADF8\uC778\uD574\uC8FC\uC138\uC694."}
+        confirmLabel={"\uD655\uC778\uD588\uC5B4\uC694"}
+        singleAction
+        onCancel={() => navigation.replace("Login")}
+        onConfirm={() => navigation.replace("Login")}
+      />
+      <ConfirmDialog
+        visible={withdrawVisible}
+        title={"\uC815\uB9D0 \uD0C8\uD1F4\uD560\uAE4C\uC694?"}
+        copy={"\uACC4\uC815\uACFC \uAE30\uB85D\uC774 \uC0AD\uC81C\uB418\uBA70, \uB2E4\uC2DC \uBCF5\uAD6C\uD558\uAE30 \uC5B4\uB824\uC6CC\uC694."}
+        confirmLabel={withdrawSaving ? "\uCC98\uB9AC \uC911" : COPY.withdraw}
+        error={withdrawError}
+        danger
+        disabled={withdrawSaving}
+        onCancel={() => {
+          if (!withdrawSaving) {
+            setWithdrawVisible(false);
+            setWithdrawError("");
+          }
+        }}
+        onConfirm={withdrawAccount}
+      />
+    </DetailShell>
+  );
+}
+
+function TimePickerModal({
+  visible,
+  value,
+  onSelectHour,
+  onSelectMinute,
+  onCancel,
+  onConfirm,
+}) {
+  const [selectedHour, selectedMinute] = normalizeAlertTime(value)
+    .split(":")
+    .map(Number);
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+      <View style={detailStyles.modalOverlay}>
+        <View style={detailStyles.timePickerSheet}>
+          <View style={detailStyles.modalHandle} />
+          <Text style={detailStyles.modalTitle}>{COPY.recordReminderTime}</Text>
+          <Text style={detailStyles.modalCopy}>
+            {"\uD558\uB8E8\uB97C \uC815\uB9AC\uD560 \uBB34\uB300 \uC2DC\uAC04\uC744 \uACE0\uB974\uC138\uC694."}
+          </Text>
+
+          <View style={detailStyles.timePickerColumns}>
+            <ScrollView
+              style={detailStyles.timePickerColumn}
+              contentContainerStyle={detailStyles.timePickerColumnContent}
+              showsVerticalScrollIndicator={false}
+            >
+              {HOURS.map((hour) => (
+                <TouchableOpacity
+                  key={hour}
+                  activeOpacity={0.78}
+                  style={[
+                    detailStyles.timeOption,
+                    hour === selectedHour && detailStyles.selectedTimeOption,
+                  ]}
+                  onPress={() => onSelectHour(hour)}
+                >
+                  <Text
+                    style={[
+                      detailStyles.timeOptionText,
+                      hour === selectedHour && detailStyles.selectedTimeOptionText,
+                    ]}
+                  >
+                    {padTime(hour)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            <Text style={detailStyles.timeColon}>:</Text>
+            <ScrollView
+              style={detailStyles.timePickerColumn}
+              contentContainerStyle={detailStyles.timePickerColumnContent}
+              showsVerticalScrollIndicator={false}
+            >
+              {MINUTES.map((minute) => (
+                <TouchableOpacity
+                  key={minute}
+                  activeOpacity={0.78}
+                  style={[
+                    detailStyles.timeOption,
+                    minute === selectedMinute && detailStyles.selectedTimeOption,
+                  ]}
+                  onPress={() => onSelectMinute(minute)}
+                >
+                  <Text
+                    style={[
+                      detailStyles.timeOptionText,
+                      minute === selectedMinute && detailStyles.selectedTimeOptionText,
+                    ]}
+                  >
+                    {padTime(minute)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+
+          <View style={detailStyles.modalActions}>
+            <TouchableOpacity
+              activeOpacity={0.82}
+              style={[detailStyles.modalButton, detailStyles.modalGhostButton]}
+              onPress={onCancel}
+            >
+              <Text style={detailStyles.modalGhostText}>{COPY.timeCancel}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              activeOpacity={0.82}
+              style={detailStyles.modalButton}
+              onPress={onConfirm}
+            >
+              <Text style={detailStyles.modalButtonText}>{COPY.timeSave}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function PasswordChangeModal({
+  visible,
+  currentPassword,
+  newPassword,
+  newPasswordConfirm,
+  error,
+  saving,
+  onChangeCurrentPassword,
+  onChangeNewPassword,
+  onChangeNewPasswordConfirm,
+  onCancel,
+  onConfirm,
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+      <View style={detailStyles.modalOverlay}>
+        <View style={detailStyles.formDialog}>
+          <Text style={detailStyles.modalTitle}>{COPY.passwordChange}</Text>
+          <Text style={detailStyles.modalCopy}>
+            {"\uC0C8 \uBE44\uBC00\uBC88\uD638\uB85C \uBCC0\uACBD\uD558\uBA74 \uB2E4\uC2DC \uB85C\uADF8\uC778\uD574\uC57C \uD574\uC694."}
+          </Text>
+          <SecureInput
+            placeholder={"\uD604\uC7AC \uBE44\uBC00\uBC88\uD638"}
+            value={currentPassword}
+            onChangeText={onChangeCurrentPassword}
+          />
+          <SecureInput
+            placeholder={"\uC0C8 \uBE44\uBC00\uBC88\uD638"}
+            value={newPassword}
+            onChangeText={onChangeNewPassword}
+          />
+          <SecureInput
+            placeholder={"\uC0C8 \uBE44\uBC00\uBC88\uD638 \uD655\uC778"}
+            value={newPasswordConfirm}
+            onChangeText={onChangeNewPasswordConfirm}
+          />
+          {!!error && <Text style={detailStyles.errorText}>{error}</Text>}
+          <View style={detailStyles.modalActions}>
+            <TouchableOpacity
+              activeOpacity={0.82}
+              style={[detailStyles.modalButton, detailStyles.modalGhostButton]}
+              onPress={onCancel}
+              disabled={saving}
+            >
+              <Text style={detailStyles.modalGhostText}>{COPY.timeCancel}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              activeOpacity={0.82}
+              style={[detailStyles.modalButton, saving && detailStyles.disabledWrap]}
+              onPress={onConfirm}
+              disabled={saving}
+            >
+              <Text style={detailStyles.modalButtonText}>
+                {saving ? "\uBCC0\uACBD \uC911" : "\uBCC0\uACBD\uD558\uAE30"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function SecureInput({ placeholder, value, onChangeText }) {
+  return (
+    <TextInput
+      value={value}
+      onChangeText={onChangeText}
+      placeholder={placeholder}
+      placeholderTextColor="rgba(255, 222, 204, 0.44)"
+      secureTextEntry
+      style={detailStyles.secureInput}
+    />
+  );
+}
+
+function ConfirmDialog({
+  visible,
+  title,
+  copy,
+  confirmLabel,
+  error,
+  singleAction,
+  danger,
+  disabled,
+  onCancel,
+  onConfirm,
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+      <View style={detailStyles.modalOverlay}>
+        <View style={detailStyles.formDialog}>
+          <Text style={detailStyles.modalTitle}>{title}</Text>
+          <Text style={detailStyles.modalCopy}>{copy}</Text>
+          {!!error && <Text style={detailStyles.errorText}>{error}</Text>}
+          <View style={detailStyles.modalActions}>
+            {!singleAction && (
+              <TouchableOpacity
+                activeOpacity={0.82}
+                style={[detailStyles.modalButton, detailStyles.modalGhostButton]}
+                onPress={onCancel}
+                disabled={disabled}
+              >
+                <Text style={detailStyles.modalGhostText}>{COPY.timeCancel}</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              activeOpacity={0.82}
+              style={[
+                detailStyles.modalButton,
+                danger && detailStyles.dangerButton,
+                disabled && detailStyles.disabledWrap,
+              ]}
+              onPress={onConfirm}
+              disabled={disabled}
+            >
+              <Text style={detailStyles.modalButtonText}>{confirmLabel}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -526,9 +923,12 @@ const detailStyles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
   },
-  timeInput: {
-    width: 74,
-    height: 38,
+  timeValueWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 3,
+  },
+  timeValue: {
     color: "#FFE2BC",
     fontFamily: "NanumSquareNeo",
     fontSize: 15,
@@ -582,5 +982,155 @@ const detailStyles = StyleSheet.create({
     fontFamily: "NanumSquareNeo",
     fontSize: 15,
     lineHeight: 22,
+  },
+  modalOverlay: {
+    flex: 1,
+    paddingHorizontal: 24,
+    backgroundColor: "rgba(4, 6, 18, 0.68)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  timePickerSheet: {
+    width: "100%",
+    maxWidth: 360,
+    maxHeight: "82%",
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: "rgba(255, 163, 99, 0.72)",
+    backgroundColor: "rgba(28, 13, 48, 0.97)",
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 18,
+  },
+  modalHandle: {
+    alignSelf: "center",
+    width: 42,
+    height: 4,
+    borderRadius: 4,
+    backgroundColor: "rgba(255, 222, 204, 0.46)",
+    marginBottom: 17,
+  },
+  modalTitle: {
+    color: "#FFE0BE",
+    fontFamily: "NanumSquareNeo",
+    fontSize: 18,
+    lineHeight: 27,
+    textAlign: "center",
+  },
+  modalCopy: {
+    marginTop: 6,
+    color: "rgba(255, 222, 204, 0.68)",
+    fontFamily: "NanumSquareNeo",
+    fontSize: 12,
+    lineHeight: 19,
+    textAlign: "center",
+  },
+  timePickerColumns: {
+    height: 240,
+    marginTop: 18,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  timePickerColumn: {
+    width: 92,
+    height: 220,
+  },
+  timePickerColumnContent: {
+    paddingVertical: 6,
+  },
+  timeOption: {
+    height: 42,
+    marginVertical: 3,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  selectedTimeOption: {
+    borderWidth: 1,
+    borderColor: "rgba(255, 179, 107, 0.78)",
+    backgroundColor: "rgba(245, 102, 67, 0.22)",
+  },
+  timeOptionText: {
+    color: "rgba(255, 226, 188, 0.7)",
+    fontFamily: "NanumSquareNeo",
+    fontSize: 17,
+    lineHeight: 24,
+  },
+  selectedTimeOptionText: {
+    color: "#FFE0BE",
+    fontSize: 20,
+  },
+  timeColon: {
+    width: 30,
+    color: "#FFB36B",
+    fontFamily: "NanumSquareNeo",
+    fontSize: 28,
+    lineHeight: 36,
+    textAlign: "center",
+  },
+  modalActions: {
+    marginTop: 18,
+    flexDirection: "row",
+    columnGap: 10,
+  },
+  modalButton: {
+    flex: 1,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: "#F56643",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalGhostButton: {
+    borderWidth: 1,
+    borderColor: "rgba(255, 179, 107, 0.54)",
+    backgroundColor: "rgba(34, 20, 56, 0.78)",
+  },
+  modalButtonText: {
+    color: "#FFFFFF",
+    fontFamily: "NanumSquareNeo",
+    fontSize: 14,
+    lineHeight: 21,
+  },
+  modalGhostText: {
+    color: "#F9CBA4",
+    fontFamily: "NanumSquareNeo",
+    fontSize: 14,
+    lineHeight: 21,
+  },
+  formDialog: {
+    width: "100%",
+    maxWidth: 360,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: "rgba(255, 163, 99, 0.72)",
+    backgroundColor: "rgba(28, 13, 48, 0.97)",
+    paddingHorizontal: 20,
+    paddingVertical: 22,
+  },
+  secureInput: {
+    height: 48,
+    marginTop: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(255, 179, 107, 0.34)",
+    backgroundColor: "rgba(18, 11, 34, 0.58)",
+    paddingHorizontal: 14,
+    color: "#FFE2BC",
+    fontFamily: "NanumSquareNeo",
+    fontSize: 14,
+    lineHeight: 21,
+  },
+  errorText: {
+    marginTop: 10,
+    color: "#FF9B7A",
+    fontFamily: "NanumSquareNeo",
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: "center",
+  },
+  dangerButton: {
+    backgroundColor: "#C94D4D",
   },
 });

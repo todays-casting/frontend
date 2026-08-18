@@ -18,9 +18,15 @@ import {
   getTodayDateKey,
   getTodayRecordState,
   setResultNoticeHidden,
+  setTodayResultReady,
   subscribeTodayRecordState,
 } from "../services/todayRecordState";
+import {
+  navigateToReturnTarget,
+  normalizeReturnTo,
+} from "../services/flowNavigation";
 import recordsApi from "../api/records-api";
+import castingsApi from "../api/castings-api";
 
 const CUSTOM_LIMIT = 10;
 
@@ -36,6 +42,20 @@ const COPY = {
   optional: "선택",
   cta: "캐스팅 결과 받기",
   customPlaceholder: "최대 10자로 입력해주세요",
+};
+
+const findNavigationWithRoute = (navigation, routeName) => {
+  let currentNavigation = navigation;
+
+  while (currentNavigation) {
+    if (currentNavigation.getState?.().routeNames?.includes(routeName)) {
+      return currentNavigation;
+    }
+
+    currentNavigation = currentNavigation.getParent?.();
+  }
+
+  return null;
 };
 
 const EMOTIONS = [
@@ -70,10 +90,68 @@ const MOODS = [
   { icon: require("../../assets/images/daily-record-icons/keyword-other.png"), label: "기타" },
 ];
 
-export default function DailyRecordScreen({ navigation }) {
+const splitKnownAndCustomTags = (values, options) => {
+  const list = Array.isArray(values) ? values.filter(Boolean) : [];
+  const optionLabels = new Set(options.map((option) => option.label));
+  const selected = list.filter((value) => optionLabels.has(value));
+  const custom = list.find((value) => !optionLabels.has(value)) ?? "";
+
+  return { selected, custom };
+};
+
+const resetRecordForm = ({
+  setDiary,
+  setEmotion,
+  setKeywords,
+  setMood,
+  setCustomEmotion,
+  setCustomKeyword,
+  setCustomMood,
+}) => {
+  setDiary("");
+  setEmotion([]);
+  setKeywords([]);
+  setMood("");
+  setCustomEmotion("");
+  setCustomKeyword("");
+  setCustomMood("");
+};
+
+const applyRecordToForm = (record, setters) => {
+  if (!record) {
+    resetRecordForm(setters);
+    return;
+  }
+
+  const emotionTags = splitKnownAndCustomTags(
+    record.mood ?? record.emotions ?? record.emotionTags,
+    EMOTIONS
+  );
+  const keywordTags = splitKnownAndCustomTags(
+    record.activityTags ?? record.keywords ?? record.keywordTags,
+    KEYWORDS
+  );
+  const moodTags = splitKnownAndCustomTags(
+    record.moodTags ?? record.moodTag ?? record.atmosphereTags,
+    MOODS
+  );
+
+  setters.setDiary(record.content ?? "");
+  setters.setEmotion(emotionTags.selected);
+  setters.setKeywords(keywordTags.selected);
+  setters.setMood(moodTags.selected[0] ?? "");
+  setters.setCustomEmotion(emotionTags.custom);
+  setters.setCustomKeyword(keywordTags.custom);
+  setters.setCustomMood(moodTags.custom);
+};
+
+export default function DailyRecordScreen({ navigation, route }) {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const { styles, sizes } = createStyles(width, height, insets);
+  const targetRecordDate = route?.params?.recordDate ?? getTodayDateKey();
+  const targetIsToday = targetRecordDate === getTodayDateKey();
+  const returnTo = normalizeReturnTo(route?.params?.returnTo, "Home");
 
   const [diary, setDiary] = useState("");
   const [emotion, setEmotion] = useState([]);
@@ -93,6 +171,7 @@ export default function DailyRecordScreen({ navigation }) {
   const [skipConfirmNextTime, setSkipConfirmNextTime] = useState(false);
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
+  const resultReadyForTarget = targetIsToday && resultReady;
 
   const count = useMemo(() => diary.length, [diary]);
 
@@ -102,6 +181,44 @@ export default function DailyRecordScreen({ navigation }) {
       setLocalResultNoticeHidden(nextState.resultNoticeHidden);
     });
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    const setters = {
+      setDiary,
+      setEmotion,
+      setKeywords,
+      setMood,
+      setCustomEmotion,
+      setCustomKeyword,
+      setCustomMood,
+    };
+
+    resetRecordForm(setters);
+    setDialog(null);
+    setConfirmVisible(false);
+
+    recordsApi
+      .getRecordByDate(targetRecordDate)
+      .then((record) => {
+        if (active) {
+          applyRecordToForm(record, setters);
+        }
+      })
+      .catch((error) => {
+        if (![404].includes(error?.response?.status)) {
+          console.warn("Failed to load daily record form:", error);
+        }
+
+        if (active) {
+          resetRecordForm(setters);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [targetRecordDate]);
 
   const toggleListItem = (setter) => (label) => {
     setter((current) => {
@@ -126,7 +243,7 @@ export default function DailyRecordScreen({ navigation }) {
   };
 
   const goAnalysisLoading = () => {
-    const rootNavigation = navigation.getParent?.();
+    const rootNavigation = findNavigationWithRoute(navigation, "AnalysisLoading");
 
     if (rootNavigation) {
       rootNavigation.navigate("AnalysisLoading");
@@ -145,16 +262,53 @@ export default function DailyRecordScreen({ navigation }) {
     goAnalysisLoading();
   };
 
-  const startAnalysis = () => {
-    const rootNavigation = navigation.getParent?.();
+  const startAnalysis = async () => {
+    const rootNavigation = findNavigationWithRoute(navigation, "Main");
 
-    if (resultReady) {
+    if (resultReadyForTarget) {
+      try {
+        const status = await recordsApi.getTodayStatus();
+        const recordId =
+          status?.dailyRecordId ??
+          status?.recordId ??
+          status?.record?.id ??
+          status?.dailyRecord?.id ??
+          status?.id;
+
+        if (status?.screen === "RESULT" && recordId) {
+          const casting = await castingsApi.getCastingByRecordId(recordId);
+          const result = normalizeCastingResultForApi(casting, recordId);
+
+          if (hasCompleteCastingResultForApi(result)) {
+            setTodayResultReady(true, result);
+            navigateResultForApi(recordId, result);
+          } else {
+            goAnalysisLoadingForApi(recordId, false, targetRecordDate);
+          }
+          return;
+        }
+
+        if (status?.screen === "WAITING") {
+          goAnalysisLoadingForApi(recordId, false, targetRecordDate);
+          return;
+        }
+      } catch (error) {
+        console.warn("Failed to open existing result:", error);
+      }
+
       if (rootNavigation) {
-        rootNavigation.navigate("Result");
+        rootNavigation.navigate("Main", {
+          screen: "Result",
+          params: {
+            result: getTodayRecordState().resultData,
+          },
+        });
         return;
       }
 
-      navigation.navigate("Result");
+      navigation.navigate("Result", {
+        result: getTodayRecordState().resultData,
+      });
       return;
     }
 
@@ -185,7 +339,7 @@ export default function DailyRecordScreen({ navigation }) {
   };
 
   const buildRecordPayloadForApi = (status) => ({
-    recordDate: getTodayDateKey(),
+    recordDate: targetRecordDate,
     content: diary.trim(),
     mood: buildTagListForApi(emotion, customEmotion),
     moodTags: buildTagListForApi(mood, customMood).slice(0, 1),
@@ -240,9 +394,216 @@ export default function DailyRecordScreen({ navigation }) {
     }
   };
 
-  const navigateAnalysisLoadingForApi = (recordId) => {
-    const rootNavigation = navigation.getParent?.();
-    const params = recordId ? { recordId } : undefined;
+  const pickFirst = (...values) =>
+    values.find((value) => value !== undefined && value !== null && value !== "");
+
+  const parseJsonTextForApi = (value) => {
+    if (typeof value !== "string") {
+      return null;
+    }
+
+    try {
+      return JSON.parse(value);
+    } catch {
+      return null;
+    }
+  };
+
+  const normalizeImageUrlForApi = (value) => {
+    if (typeof value !== "string") {
+      return "";
+    }
+
+    const trimmed = value.trim();
+
+    if (!trimmed) {
+      return "";
+    }
+
+    if (trimmed.startsWith("data:image/")) {
+      return trimmed;
+    }
+
+    if (/^[A-Za-z0-9+/=]+$/.test(trimmed) && trimmed.length > 200) {
+      return `data:image/png;base64,${trimmed}`;
+    }
+
+    if (/^https?:\/\//.test(trimmed)) {
+      return trimmed;
+    }
+
+    if (trimmed.startsWith("/") && process.env.EXPO_PUBLIC_API_URL) {
+      return `${process.env.EXPO_PUBLIC_API_URL.replace(/\/$/, "")}${trimmed}`;
+    }
+
+    return trimmed;
+  };
+
+  const normalizeCastingResultForApi = (casting, recordId) => {
+    const baseSource =
+      casting?.casting ??
+      casting?.castingCard ??
+      casting?.castingResult ??
+      casting?.result ??
+      casting ??
+      {};
+    const source = {
+      ...(parseJsonTextForApi(baseSource.rawResponse) ?? {}),
+      ...baseSource,
+    };
+
+    return {
+      recordId:
+        pickFirst(source.dailyRecordId, source.recordId, casting?.dailyRecordId, casting?.recordId) ??
+        recordId,
+      userName: pickFirst(source.userName, source.nickname, source.name),
+      title: pickFirst(
+        source.title,
+        source.roleName,
+        source.role,
+        source.characterName,
+        source.character,
+        source.castingTitle
+      ),
+      genre: pickFirst(source.genre, source.movieGenre, source.todayGenre),
+      role: pickFirst(source.roleName, source.role, source.characterName),
+      line: pickFirst(
+        source.oneLineComment,
+        source.line,
+        source.quote,
+        source.summary,
+        source.description
+      ),
+      scene: pickFirst(
+        source.scenePhrase,
+        source.scene,
+        source.memorableScene,
+        source.sceneDescription,
+        source.situation
+      ),
+      imageUrl: normalizeImageUrlForApi(
+        pickFirst(
+          source.imageUrl,
+          source.imageURL,
+          source.image_url,
+          source.generatedImageUrl,
+          source.generatedImageURL,
+          source.generatedImage,
+          source.posterUrl,
+          source.posterImageUrl,
+          source.castingImageUrl,
+          source.cardImageUrl,
+          source.cardImage,
+          source.image,
+          source.imagePath,
+          source.imageBase64,
+          source.base64Image,
+          source.imageData
+        )
+      ),
+      imageKey: pickFirst(
+        source.imageKey,
+        source.image_key,
+        source.generatedImageKey,
+        source.generated_image_key,
+        source.generatedImageId,
+        source.generated_image_id,
+        typeof source.castingImageId === "string" ? source.castingImageId : null,
+        casting?.imageKey,
+        casting?.image_key,
+        casting?.generatedImageKey,
+        casting?.generated_image_key,
+        casting?.generatedImageId,
+        casting?.generated_image_id,
+        typeof casting?.castingImageId === "string" ? casting.castingImageId : null
+      ),
+      hasGeneratedImageUrl: Boolean(source.hasGeneratedImageUrl ?? casting?.hasGeneratedImageUrl),
+      hasResolvedCastingImage: Boolean(
+        source.hasResolvedCastingImage ?? casting?.hasResolvedCastingImage
+      ),
+      isFavorite: Boolean(source.isFavorite),
+    };
+  };
+
+  const hasCastingDisplayResult = (result) =>
+    typeof result?.title === "string" && result.title.trim().length > 0;
+
+  const isPlaceholderImageUrlForApi = (value) =>
+    typeof value === "string" &&
+    /\/default-[^/?#]+\.png(?:[?#].*)?$/i.test(value);
+
+  const hasGeneratedCastingImageForApi = (result) =>
+    Boolean(
+      result &&
+        typeof result.imageUrl === "string" &&
+        result.imageUrl.trim().length > 0 &&
+        !isPlaceholderImageUrlForApi(result.imageUrl) &&
+        (result.hasGeneratedImageUrl || result.imageKey)
+    );
+
+  const hasCompleteCastingResultForApi = (result) =>
+    hasCastingDisplayResult(result) && hasGeneratedCastingImageForApi(result);
+
+  const getCastingErrorMessage = (error) =>
+    error?.response?.data?.message ??
+    error?.response?.data?.error ??
+    error?.message ??
+    "캐스팅 결과를 만들지 못했어요. 잠시 후 다시 시도해주세요.";
+
+  const createCastingForApi = async (recordId) => {
+    savingRef.current = true;
+    setSaving(true);
+
+    try {
+      const createdCasting = await castingsApi.createCasting(recordId);
+      let result = normalizeCastingResultForApi(createdCasting, recordId);
+
+      if (!hasCompleteCastingResultForApi(result)) {
+        const casting = await castingsApi.getCastingByRecordId(recordId);
+        result = normalizeCastingResultForApi(casting, recordId);
+      }
+
+      if (!hasCompleteCastingResultForApi(result)) {
+        return null;
+      }
+
+      return result;
+    } catch (error) {
+      console.warn("Failed to create casting:", error);
+      showDialog(getCastingErrorMessage(error));
+      return null;
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  };
+
+  const navigateResultForApi = (recordId, result) => {
+    const rootNavigation = findNavigationWithRoute(navigation, "Main");
+    const params = recordId
+      ? { recordId, recordDate: targetRecordDate, returnTo, result }
+      : { recordDate: targetRecordDate, returnTo, result };
+
+    if (rootNavigation) {
+      rootNavigation.navigate("Main", {
+        screen: "Result",
+        params,
+      });
+      return;
+    }
+
+    navigation.navigate("Result", params);
+  };
+
+  const goAnalysisLoadingForApi = (
+    recordId,
+    shouldStartGeneration = false,
+    recordDate = targetRecordDate
+  ) => {
+    const rootNavigation = findNavigationWithRoute(navigation, "AnalysisLoading");
+    const params = recordId
+      ? { recordId, recordDate, returnTo, shouldStartGeneration }
+      : { recordDate, returnTo, shouldStartGeneration };
 
     if (rootNavigation) {
       rootNavigation.navigate("AnalysisLoading", params);
@@ -277,7 +638,10 @@ export default function DailyRecordScreen({ navigation }) {
     const record = await saveRecordForApi("COMPLETED");
 
     if (record?.id) {
-      navigateAnalysisLoadingForApi(record.id);
+      if (targetIsToday) {
+        setTodayResultReady(false);
+      }
+      goAnalysisLoadingForApi(record.id, true, targetRecordDate);
     } else if (record) {
       showDialog("\uAE30\uB85D\uC740 \uC800\uC7A5\uB410\uC9C0\uB9CC \uACB0\uACFC \uC870\uD68C\uC5D0 \uD544\uC694\uD55C ID\uB97C \uBC1B\uC9C0 \uBABB\uD588\uC5B4\uC694.");
     }
@@ -288,15 +652,54 @@ export default function DailyRecordScreen({ navigation }) {
       return;
     }
 
-    const rootNavigation = navigation.getParent?.();
+    const rootNavigation = findNavigationWithRoute(navigation, "Main");
 
-    if (resultReady) {
+    if (resultReadyForTarget) {
+      try {
+        const status = await recordsApi.getTodayStatus();
+        const recordId =
+          status?.dailyRecordId ??
+          status?.recordId ??
+          status?.record?.id ??
+          status?.dailyRecord?.id ??
+          status?.id;
+
+        if (status?.screen === "RESULT" && recordId) {
+          const casting = await castingsApi.getCastingByRecordId(recordId);
+          const result = normalizeCastingResultForApi(casting, recordId);
+
+          if (hasCompleteCastingResultForApi(result)) {
+            setTodayResultReady(true, result);
+            navigateResultForApi(recordId, result);
+          } else {
+            goAnalysisLoadingForApi(recordId, false, targetRecordDate);
+          }
+          return;
+        }
+
+        if (status?.screen === "WAITING") {
+          goAnalysisLoadingForApi(recordId, false, targetRecordDate);
+          return;
+        }
+      } catch (error) {
+        console.warn("Failed to open existing result:", error);
+      }
+
+      const storedResult = getTodayRecordState().resultData;
+
       if (rootNavigation) {
-        rootNavigation.navigate("Result");
+        rootNavigation.navigate("Main", {
+          screen: "Result",
+          params: {
+            result: storedResult,
+          },
+        });
         return;
       }
 
-      navigation.navigate("Result");
+      navigation.navigate("Result", {
+        result: storedResult,
+      });
       return;
     }
 
@@ -313,7 +716,10 @@ export default function DailyRecordScreen({ navigation }) {
     const record = await saveRecordForApi("COMPLETED");
 
     if (record?.id) {
-      navigateAnalysisLoadingForApi(record.id);
+      if (targetIsToday) {
+        setTodayResultReady(false);
+      }
+      goAnalysisLoadingForApi(record.id, true, targetRecordDate);
     } else if (record) {
       showDialog("\uAE30\uB85D\uC740 \uC800\uC7A5\uB410\uC9C0\uB9CC \uACB0\uACFC \uC870\uD68C\uC5D0 \uD544\uC694\uD55C ID\uB97C \uBC1B\uC9C0 \uBABB\uD588\uC5B4\uC694.");
     }
@@ -343,7 +749,7 @@ export default function DailyRecordScreen({ navigation }) {
               <TouchableOpacity
                 activeOpacity={0.74}
                 style={styles.headerIconButton}
-                onPress={() => navigation?.navigate?.("Home")}
+                onPress={() => navigateToReturnTarget(navigation, returnTo, "Home")}
               >
                 <Ionicons name="chevron-back" size={sizes.headerIcon} color="#FFB36B" />
               </TouchableOpacity>
@@ -452,7 +858,7 @@ export default function DailyRecordScreen({ navigation }) {
             <Text style={styles.ctaSparkle}>{"✦"}</Text>
             <MaterialCommunityIcons name="movie-open" size={sizes.ctaIcon} color="#FFFFFF" />
             <Text style={styles.ctaText} numberOfLines={1} adjustsFontSizeToFit>
-              {resultReady ? "오늘의 결과 보기" : COPY.cta}
+              {resultReadyForTarget ? "오늘의 결과 보기" : COPY.cta}
             </Text>
             <Text style={styles.ctaSparkle}>{"✦"}</Text>
           </TouchableOpacity>
@@ -692,8 +1098,8 @@ const createStyles = (screenWidth, screenHeight, insets) => {
         flex: 1,
         color: "#F5D7B1",
         fontFamily: "NanumSquareNeo",
-        fontSize: ms(20),
-        lineHeight: ms(29),
+        fontSize: ms(18),
+        lineHeight: ms(27),
         textAlign: "center",
       },
       saveButton: {
@@ -717,15 +1123,15 @@ const createStyles = (screenWidth, screenHeight, insets) => {
         width: ms(30),
         color: "#FFAD62",
         fontFamily: "MaruBuriSemiBold",
-        fontSize: ms(28),
-        lineHeight: ms(31),
+        fontSize: ms(24),
+        lineHeight: ms(28),
       },
       promptText: {
         flex: 1,
         color: "#FF9F52",
         fontFamily: "NanumSquareNeo",
-        fontSize: ms(15),
-        lineHeight: ms(24),
+        fontSize: ms(14),
+        lineHeight: ms(22),
         textAlign: "center",
       },
       promptCurl: {
@@ -758,8 +1164,8 @@ const createStyles = (screenWidth, screenHeight, insets) => {
         paddingBottom: ms(42),
         color: "#FFF0D9",
         fontFamily: "NanumSquareNeo",
-        fontSize: ms(15),
-        lineHeight: ms(27),
+        fontSize: ms(14),
+        lineHeight: ms(25),
         zIndex: 1,
       },
       counter: {
@@ -932,8 +1338,8 @@ const createStyles = (screenWidth, screenHeight, insets) => {
         marginHorizontal: ms(10),
         color: "#FFFFFF",
         fontFamily: "NanumSquareNeo",
-        fontSize: ms(18),
-        lineHeight: ms(26),
+        fontSize: ms(16),
+        lineHeight: ms(24),
         textAlign: "center",
       },
       ctaSparkle: {

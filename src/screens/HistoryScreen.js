@@ -16,10 +16,16 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import NotificationSheet from "../components/NotificationSheet";
+import {
+  getNotificationState,
+  markAllNotificationsRead,
+  subscribeNotificationState,
+} from "../services/notificationState";
 import { CastingCardBack, CastingCardFront } from "./CalendarScreen";
 import calendarApi from "../api/calendar-api";
 import castingsApi from "../api/castings-api";
 import recordsApi from "../api/records-api";
+import { notifyFavoriteChanged, subscribeFavoriteChanges } from "../services/favoriteState";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const scale = Math.min(Math.max(SCREEN_WIDTH / 393, 0.82), 1.15);
@@ -36,6 +42,19 @@ const toDateKey = (date) =>
     date.getDate()
   ).padStart(2, "0")}`;
 
+const isPlaceholderImageUrl = (value) =>
+  typeof value === "string" &&
+  /\/default-[^/?#]+\.png(?:[?#].*)?$/i.test(value);
+
+const hasCompleteCastingImage = (casting) =>
+  Boolean(
+    casting &&
+      typeof casting.imageUrl === "string" &&
+      casting.imageUrl.trim().length > 0 &&
+      !isPlaceholderImageUrl(casting.imageUrl) &&
+      (casting.hasGeneratedImageUrl || casting.imageKey)
+  );
+
 const formatCardDate = (dateKey) => dateKey.replaceAll("-", ".");
 
 const formatDateRange = (start, end) => {
@@ -47,12 +66,22 @@ const formatDateRange = (start, end) => {
   return `${start.getFullYear()}년 ${startMonth}월 ${startDay}일 ~ ${end.getFullYear()}년 ${endMonth}월 ${endDay}일`;
 };
 
-const getCurrentWeek = () => {
-  const today = new Date();
-  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate() - today.getDay());
-  const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6);
+const getCenteredWeek = (centerDate) => {
+  const start = new Date(
+    centerDate.getFullYear(),
+    centerDate.getMonth(),
+    centerDate.getDate() - 3
+  );
+  const end = new Date(
+    centerDate.getFullYear(),
+    centerDate.getMonth(),
+    centerDate.getDate() + 3
+  );
+
   return { start, end };
 };
+
+const getCurrentWeek = () => getCenteredWeek(new Date());
 
 const toYearMonth = (date) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
@@ -163,15 +192,18 @@ export default function HistoryScreen({ navigation }) {
   const initialWeek = useMemo(getCurrentWeek, []);
   const [week, setWeek] = useState(initialWeek);
   const [datePickerVisible, setDatePickerVisible] = useState(false);
-  const [startDateInput, setStartDateInput] = useState(() => toDateKey(initialWeek.start));
-  const [endDateInput, setEndDateInput] = useState(() => toDateKey(initialWeek.end));
+  const [centerDateInput, setCenterDateInput] = useState(() => toDateKey(new Date()));
   const [dateInputError, setDateInputError] = useState("");
+  const [futureDateModalVisible, setFutureDateModalVisible] = useState(false);
   const [historyRecords, setHistoryRecords] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [historyError, setHistoryError] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
   const [backVisible, setBackVisible] = useState(false);
   const [notificationVisible, setNotificationVisible] = useState(false);
+  const [notificationState, setNotificationState] = useState(() =>
+    getNotificationState()
+  );
   const [favoriteDates, setFavoriteDates] = useState(() => new Set());
   const [favoriteLoadingRecordId, setFavoriteLoadingRecordId] = useState(null);
   const scrollRef = useRef(null);
@@ -181,11 +213,60 @@ export default function HistoryScreen({ navigation }) {
   const scrollX = useRef(new Animated.Value(activeIndex * SNAP)).current;
   const flip = useRef(new Animated.Value(0)).current;
 
+  useEffect(() => subscribeNotificationState(setNotificationState), []);
+  useEffect(
+    () =>
+      subscribeFavoriteChanges(({ recordId, dateKey, isFavorite }) => {
+        if (typeof isFavorite !== "boolean") {
+          return;
+        }
+
+        setHistoryRecords((current) =>
+          current.map((item) =>
+            String(item.recordId) === String(recordId)
+              ? { ...item, liked: isFavorite }
+              : item
+          )
+        );
+
+        if (dateKey) {
+          setFavoriteDates((current) => {
+            const next = new Set(current);
+
+            if (isFavorite) next.add(dateKey);
+            else next.delete(dateKey);
+
+            return next;
+          });
+        }
+      }),
+    []
+  );
+
   const weekLabel = historyLoading
     ? "히스토리를 불러오는 중..."
     : historyError
       ? historyError
       : formatDateRange(week.start, week.end);
+  const hasHistoryRecords = historyRecords.length > 0;
+
+  useEffect(() => {
+    if (historyRecords.length === 0) {
+      if (activeIndex !== 0) {
+        setActiveIndex(0);
+      }
+      scrollX.setValue(0);
+      return;
+    }
+
+    if (activeIndex > historyRecords.length - 1) {
+      const nextIndex = historyRecords.length - 1;
+
+      setActiveIndex(nextIndex);
+      scrollX.setValue(nextIndex * SNAP);
+      scrollRef.current?.scrollTo({ x: nextIndex * SNAP, animated: false });
+    }
+  }, [activeIndex, historyRecords.length, scrollX]);
 
   useEffect(() => {
     let active = true;
@@ -220,6 +301,11 @@ export default function HistoryScreen({ navigation }) {
             }
 
             const casting = await castingsApi.getCastingByRecordId(dailyRecord.id);
+
+            if (!hasCompleteCastingImage(casting)) {
+              return null;
+            }
+
             const date = new Date(`${recordDate}T00:00:00`);
 
             return {
@@ -227,7 +313,7 @@ export default function HistoryScreen({ navigation }) {
               date: formatCardDate(recordDate),
               dateKey: recordDate,
               day: ["일", "월", "화", "수", "목", "금", "토"][date.getDay()],
-              title: casting.highlight || casting.characterPhrase,
+              title: casting.roleName || casting.characterName || casting.role || casting.castingTitle,
               genre: casting.genre,
               emotion: casting.additionalMood?.join(" · ") || "",
               line: casting.oneLineComment,
@@ -312,33 +398,62 @@ export default function HistoryScreen({ navigation }) {
   };
 
   const openDatePicker = () => {
-    setStartDateInput(toDateKey(week.start));
-    setEndDateInput(toDateKey(week.end));
+    const center = new Date(
+      week.start.getFullYear(),
+      week.start.getMonth(),
+      week.start.getDate() + 3
+    );
+
+    setCenterDateInput(toDateKey(center));
     setDateInputError("");
     setDatePickerVisible(true);
   };
 
-  const applyDateRange = () => {
-    const start = parseDateInput(startDateInput);
-    const end = parseDateInput(endDateInput);
+  const moveWeek = (offsetDays) => {
+    setWeek((current) => {
+      const nextStart = new Date(
+        current.start.getFullYear(),
+        current.start.getMonth(),
+        current.start.getDate() + offsetDays
+      );
+      const nextEnd = new Date(
+        current.end.getFullYear(),
+        current.end.getMonth(),
+        current.end.getDate() + offsetDays
+      );
+      const today = new Date();
+      const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
 
-    if (!start || !end) {
+      if (nextStart > todayDate) {
+        setFutureDateModalVisible(true);
+        return current;
+      }
+
+      return {
+        start: nextStart,
+        end: nextEnd,
+      };
+    });
+  };
+
+  const applyCenteredDate = () => {
+    const selectedDate = parseDateInput(centerDateInput);
+
+    if (!selectedDate) {
       setDateInputError("날짜를 YYYY-MM-DD 형식으로 입력해주세요.");
       return;
     }
 
-    if (start > end) {
-      setDateInputError("시작일은 종료일보다 늦을 수 없어요.");
+    const today = new Date();
+    const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
+    if (selectedDate > todayDate) {
+      setDatePickerVisible(false);
+      setFutureDateModalVisible(true);
       return;
     }
 
-    const rangeDays = Math.floor((end - start) / 86400000) + 1;
-    if (rangeDays > 31) {
-      setDateInputError("조회 기간은 최대 31일까지 선택할 수 있어요.");
-      return;
-    }
-
-    setWeek({ start, end });
+    setWeek(getCenteredWeek(selectedDate));
     setDatePickerVisible(false);
   };
 
@@ -365,6 +480,11 @@ export default function HistoryScreen({ navigation }) {
         if (updatedCasting.isFavorite) next.add(record.dateKey);
         else next.delete(record.dateKey);
         return next;
+      });
+      notifyFavoriteChanged({
+        recordId: record.recordId,
+        dateKey: record.dateKey,
+        isFavorite: updatedCasting.isFavorite,
       });
     } catch (error) {
       setHistoryError(
@@ -465,17 +585,20 @@ export default function HistoryScreen({ navigation }) {
               onPress={() => setNotificationVisible(true)}
             >
               <Ionicons name="notifications-outline" size={ms(31)} color="#FFB15D" />
+              {notificationState.hasUnread && <View style={styles.bellDot} />}
             </TouchableOpacity>
           </View>
 
-          <TouchableOpacity
-            activeOpacity={0.8}
-            style={styles.weekPicker}
-            onPress={openDatePicker}
-            accessibilityRole="button"
-            accessibilityLabel="히스토리 조회 기간 선택"
-          >
-            <Ionicons name="calendar-outline" size={ms(20)} color="#FFB26D" />
+          <View style={styles.weekPicker}>
+            <TouchableOpacity
+              activeOpacity={0.75}
+              style={styles.weekArrowButton}
+              onPress={() => moveWeek(-7)}
+              accessibilityRole="button"
+              accessibilityLabel="이전 7일 보기"
+            >
+              <Ionicons name="chevron-back" size={ms(20)} color="#FFB26D" />
+            </TouchableOpacity>
             <Text
               style={styles.weekText}
               numberOfLines={1}
@@ -484,139 +607,170 @@ export default function HistoryScreen({ navigation }) {
             >
               {weekLabel}
             </Text>
-            <Ionicons name="chevron-down" size={ms(20)} color="#CE737D" />
-          </TouchableOpacity>
-
-          <View style={styles.carouselWrap}>
-            <Animated.ScrollView
-              ref={scrollRef}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              snapToOffsets={historyRecords.map((_, index) => index * SNAP)}
-              snapToAlignment="start"
-              disableIntervalMomentum
-              decelerationRate="fast"
-              bounces={false}
-              contentOffset={{ x: activeIndex * SNAP, y: 0 }}
-              contentContainerStyle={styles.carouselContent}
-              onScrollBeginDrag={() => {
-                isDraggingRef.current = true;
-                clearTimeout(scrollEndTimerRef.current);
-              }}
-              onScrollEndDrag={() => {
-                isDraggingRef.current = false;
-                scheduleNearestCardSnap(lastScrollOffsetRef.current, 80);
-              }}
-              onMomentumScrollEnd={handleMomentumEnd}
-              onScroll={Animated.event(
-                [{ nativeEvent: { contentOffset: { x: scrollX } } }],
-                {
-                  useNativeDriver: true,
-                  listener: handleCarouselScroll,
-                }
-              )}
-              scrollEventThrottle={16}
+            <TouchableOpacity
+              activeOpacity={0.75}
+              style={styles.weekArrowButton}
+              onPress={() => moveWeek(7)}
+              accessibilityRole="button"
+              accessibilityLabel="다음 7일 보기"
             >
-              {historyRecords.map((record, index) => {
-                const inputRange = [
-                  (index - 1) * SNAP,
-                  index * SNAP,
-                  (index + 1) * SNAP,
-                ];
-                const scale = scrollX.interpolate({
-                  inputRange,
-                  outputRange: [0.82, 1, 0.82],
-                  extrapolate: "clamp",
-                });
-                const opacity = scrollX.interpolate({
-                  inputRange,
-                  outputRange: [0.68, 1, 0.68],
-                  extrapolate: "clamp",
-                });
-                const rotateY = scrollX.interpolate({
-                  inputRange,
-                  outputRange: ["-38deg", "0deg", "38deg"],
-                  extrapolate: "clamp",
-                });
-                const translateX = scrollX.interpolate({
-                  inputRange,
-                  outputRange: [-ms(20), 0, ms(20)],
-                  extrapolate: "clamp",
-                });
-                const translateY = scrollX.interpolate({
-                  inputRange,
-                  outputRange: [vs(15), 0, vs(15)],
-                  extrapolate: "clamp",
-                });
-
-                return (
-                  <Animated.View
-                    key={record.dateKey}
-                    style={[
-                      styles.cardSlot,
-                      {
-                        opacity,
-                        zIndex: index === activeIndex ? 3 : 1,
-                        elevation: index === activeIndex ? 3 : 1,
-                        transform: [
-                          { perspective: ms(900) },
-                          { translateX },
-                          { translateY },
-                          { rotateY },
-                          { scale },
-                        ],
-                      },
-                    ]}
-                  >
-                    {index === activeIndex ? (
-                      <HistoryFlipCard
-                        record={record}
-                        isFavorite={favoriteDates.has(record.dateKey)}
-                        backVisible={backVisible}
-                        frontRotate={frontRotate}
-                        backRotate={backRotate}
-                        onToggleFavorite={() => toggleFavorite(record)}
-                        onShowBack={showBack}
-                        onShowFront={showFront}
-                      />
-                    ) : (
-                      <HistoryCardFront
-                        record={record}
-                        focused={index === activeIndex}
-                        isFavorite={favoriteDates.has(record.dateKey)}
-                        onToggleFavorite={() => toggleFavorite(record)}
-                        onShowBack={() => scrollToIndex(index)}
-                      />
-                    )}
-                  </Animated.View>
-                );
-              })}
-            </Animated.ScrollView>
-
+              <Ionicons name="chevron-forward" size={ms(20)} color="#FFB26D" />
+            </TouchableOpacity>
             <TouchableOpacity
-              activeOpacity={0.65}
-              style={styles.leftEdge}
-              onPress={() => scrollToIndex(activeIndex - 1)}
-            />
-            <TouchableOpacity
-              activeOpacity={0.65}
-              style={styles.rightEdge}
-              onPress={() => scrollToIndex(activeIndex + 1)}
-            />
+              activeOpacity={0.75}
+              style={styles.weekCalendarButton}
+              onPress={openDatePicker}
+              accessibilityRole="button"
+              accessibilityLabel="기준 날짜 선택"
+            >
+              <Ionicons name="calendar-outline" size={ms(20)} color="#FFB26D" />
+            </TouchableOpacity>
           </View>
 
-          <View style={styles.pagination}>
-            {historyRecords.map((record, index) => (
-              <View
-                key={`${record.dateKey}-dot`}
-                style={[styles.dot, activeIndex === index && styles.activeDot]}
-              />
-            ))}
-          </View>
+          {hasHistoryRecords ? (
+            <>
+              <View style={styles.carouselWrap}>
+                <Animated.ScrollView
+                  ref={scrollRef}
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  snapToOffsets={historyRecords.map((_, index) => index * SNAP)}
+                  snapToAlignment="start"
+                  disableIntervalMomentum
+                  decelerationRate="fast"
+                  bounces={false}
+                  contentOffset={{ x: activeIndex * SNAP, y: 0 }}
+                  contentContainerStyle={styles.carouselContent}
+                  onScrollBeginDrag={() => {
+                    isDraggingRef.current = true;
+                    clearTimeout(scrollEndTimerRef.current);
+                  }}
+                  onScrollEndDrag={() => {
+                    isDraggingRef.current = false;
+                    scheduleNearestCardSnap(lastScrollOffsetRef.current, 80);
+                  }}
+                  onMomentumScrollEnd={handleMomentumEnd}
+                  onScroll={Animated.event(
+                    [{ nativeEvent: { contentOffset: { x: scrollX } } }],
+                    {
+                      useNativeDriver: true,
+                      listener: handleCarouselScroll,
+                    }
+                  )}
+                  scrollEventThrottle={16}
+                >
+                  {historyRecords.map((record, index) => {
+                    const inputRange = [
+                      (index - 1) * SNAP,
+                      index * SNAP,
+                      (index + 1) * SNAP,
+                    ];
+                    const scale = scrollX.interpolate({
+                      inputRange,
+                      outputRange: [0.82, 1, 0.82],
+                      extrapolate: "clamp",
+                    });
+                    const opacity = scrollX.interpolate({
+                      inputRange,
+                      outputRange: [0.68, 1, 0.68],
+                      extrapolate: "clamp",
+                    });
+                    const rotateY = scrollX.interpolate({
+                      inputRange,
+                      outputRange: ["-38deg", "0deg", "38deg"],
+                      extrapolate: "clamp",
+                    });
+                    const translateX = scrollX.interpolate({
+                      inputRange,
+                      outputRange: [-ms(20), 0, ms(20)],
+                      extrapolate: "clamp",
+                    });
+                    const translateY = scrollX.interpolate({
+                      inputRange,
+                      outputRange: [vs(15), 0, vs(15)],
+                      extrapolate: "clamp",
+                    });
+
+                    return (
+                      <Animated.View
+                        key={record.dateKey}
+                        style={[
+                          styles.cardSlot,
+                          {
+                            opacity,
+                            zIndex: index === activeIndex ? 3 : 1,
+                            elevation: index === activeIndex ? 3 : 1,
+                            transform: [
+                              { perspective: ms(900) },
+                              { translateX },
+                              { translateY },
+                              { rotateY },
+                              { scale },
+                            ],
+                          },
+                        ]}
+                      >
+                        {index === activeIndex ? (
+                          <HistoryFlipCard
+                            record={record}
+                            isFavorite={favoriteDates.has(record.dateKey)}
+                            backVisible={backVisible}
+                            frontRotate={frontRotate}
+                            backRotate={backRotate}
+                            onToggleFavorite={() => toggleFavorite(record)}
+                            onShowBack={showBack}
+                            onShowFront={showFront}
+                          />
+                        ) : (
+                          <HistoryCardFront
+                            record={record}
+                            focused={index === activeIndex}
+                            isFavorite={favoriteDates.has(record.dateKey)}
+                            onToggleFavorite={() => toggleFavorite(record)}
+                            onShowBack={() => scrollToIndex(index)}
+                          />
+                        )}
+                      </Animated.View>
+                    );
+                  })}
+                </Animated.ScrollView>
+
+                <TouchableOpacity
+                  activeOpacity={0.65}
+                  style={styles.leftEdge}
+                  onPress={() => scrollToIndex(activeIndex - 1)}
+                />
+                <TouchableOpacity
+                  activeOpacity={0.65}
+                  style={styles.rightEdge}
+                  onPress={() => scrollToIndex(activeIndex + 1)}
+                />
+              </View>
+
+              <View style={styles.pagination}>
+                {historyRecords.map((record, index) => (
+                  <View
+                    key={`${record.dateKey}-dot`}
+                    style={[styles.dot, activeIndex === index && styles.activeDot]}
+                  />
+                ))}
+              </View>
+            </>
+          ) : (
+            <View style={styles.emptyHistory}>
+              <Text style={styles.emptyHistoryText}>
+                {historyLoading
+                  ? "완성된 카드를 확인하고 있어요."
+                  : "완성된 캐스팅 카드가 아직 없어요."}
+              </Text>
+            </View>
+          )}
         </ScrollView>
         <NotificationSheet
           visible={notificationVisible}
+          notifications={notificationState.notifications}
           onClose={() => setNotificationVisible(false)}
+          onMarkAllRead={markAllNotificationsRead}
         />
         <Modal
           visible={datePickerVisible}
@@ -626,29 +780,15 @@ export default function HistoryScreen({ navigation }) {
         >
           <View style={styles.dateModalOverlay}>
             <View style={styles.dateModalCard}>
-              <Text style={styles.dateModalTitle}>조회 기간 입력</Text>
-              <Text style={styles.dateModalHelp}>YYYY-MM-DD 형식으로 입력해주세요.</Text>
+              <Text style={styles.dateModalTitle}>기준 날짜 선택</Text>
+              <Text style={styles.dateModalHelp}>선택한 날짜를 중심으로 7일을 보여드려요.</Text>
 
               <View style={styles.dateFieldGroup}>
-                <Text style={styles.dateFieldLabel}>시작일</Text>
+                <Text style={styles.dateFieldLabel}>기준 날짜</Text>
                 <TextInput
-                  value={startDateInput}
-                  onChangeText={setStartDateInput}
-                  placeholder="2026-08-01"
-                  placeholderTextColor="rgba(255, 208, 160, 0.4)"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  maxLength={10}
-                  style={styles.dateInput}
-                />
-              </View>
-
-              <View style={styles.dateFieldGroup}>
-                <Text style={styles.dateFieldLabel}>종료일</Text>
-                <TextInput
-                  value={endDateInput}
-                  onChangeText={setEndDateInput}
-                  placeholder="2026-08-31"
+                  value={centerDateInput}
+                  onChangeText={setCenterDateInput}
+                  placeholder="2026-08-18"
                   placeholderTextColor="rgba(255, 208, 160, 0.4)"
                   autoCapitalize="none"
                   autoCorrect={false}
@@ -672,11 +812,34 @@ export default function HistoryScreen({ navigation }) {
                 <TouchableOpacity
                   activeOpacity={0.85}
                   style={styles.dateApplyButton}
-                  onPress={applyDateRange}
+                  onPress={applyCenteredDate}
                 >
                   <Text style={styles.dateApplyText}>조회하기</Text>
                 </TouchableOpacity>
               </View>
+            </View>
+          </View>
+        </Modal>
+        <Modal
+          visible={futureDateModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setFutureDateModalVisible(false)}
+        >
+          <View style={styles.dateModalOverlay}>
+            <View style={styles.dateModalCard}>
+              <Text style={styles.dateModalTitle}>아직 상영 전인 날짜예요</Text>
+              <Text style={styles.dateModalHelp}>
+                그날의 캐스팅은 시간이 지나면 열릴 거예요.
+              </Text>
+
+              <TouchableOpacity
+                activeOpacity={0.85}
+                style={styles.futureDateButton}
+                onPress={() => setFutureDateModalVisible(false)}
+              >
+                <Text style={styles.dateApplyText}>확인했어요</Text>
+              </TouchableOpacity>
             </View>
           </View>
         </Modal>
@@ -739,7 +902,7 @@ function HistoryCardFront({
   onShowBack,
 }) {
   const rows = [
-    { icon: "heart-outline", label: "오늘의 감정", text: record.emotion },
+    { icon: "movie-open-outline", label: "오늘의 장르", text: record.genre },
     { icon: "pencil-outline", label: "오늘의 한줄 기록", text: record.line },
     { icon: "image-outline", label: "기억에 남은 장면", text: record.scene },
   ];
@@ -749,7 +912,7 @@ function HistoryCardFront({
       <CastingCardFront
         date={record.date}
         record={record}
-        eyebrow="TODAY’S GENRE"
+        eyebrow="TODAY’S CASTING"
         rows={rows}
         isFavorite={isFavorite}
         onToggleFavorite={onToggleFavorite}
@@ -837,12 +1000,22 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginTop: ms(40),
   },
+  bellDot: {
+    position: "absolute",
+    right: ms(8),
+    top: ms(7),
+    width: ms(6),
+    height: ms(6),
+    borderRadius: ms(5),
+    backgroundColor: "#FF7746",
+  },
   weekPicker: {
     alignSelf: "center",
     marginTop: vs(24),
     width: Math.min(SCREEN_WIDTH - ms(28), ms(334)),
     height: vs(45),
-    paddingHorizontal: ms(11),
+    paddingLeft: ms(6),
+    paddingRight: ms(7),
     borderRadius: ms(24),
     borderWidth: 1,
     borderColor: "rgba(180, 75, 85, 0.65)",
@@ -850,14 +1023,29 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
   },
+  weekArrowButton: {
+    width: ms(34),
+    height: vs(34),
+    borderRadius: ms(17),
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  weekCalendarButton: {
+    width: ms(36),
+    height: vs(34),
+    borderRadius: ms(17),
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255, 178, 109, 0.08)",
+  },
   weekText: {
     flex: 1,
-    marginLeft: ms(8),
-    marginRight: ms(5),
+    marginHorizontal: ms(2),
     color: "#FFD0A0",
     fontFamily: "NanumSquareNeo",
-    fontSize: ms(11),
+    fontSize: ms(10),
     lineHeight: ms(21),
+    textAlign: "center",
   },
   dateModalOverlay: {
     flex: 1,
@@ -938,6 +1126,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  futureDateButton: {
+    alignSelf: "center",
+    marginTop: vs(4),
+    minWidth: ms(134),
+    height: vs(44),
+    paddingHorizontal: ms(22),
+    borderRadius: ms(22),
+    backgroundColor: "#FF9A5D",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   dateCancelText: {
     color: "rgba(255, 228, 190, 0.76)",
     fontFamily: "NanumSquareNeo",
@@ -981,6 +1180,19 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
+  },
+  emptyHistory: {
+    minHeight: vs(500),
+    paddingTop: vs(185),
+    paddingHorizontal: ms(36),
+    alignItems: "center",
+  },
+  emptyHistoryText: {
+    color: "rgba(255, 208, 160, 0.72)",
+    fontFamily: "NanumSquareNeo",
+    fontSize: ms(13),
+    lineHeight: ms(20),
+    textAlign: "center",
   },
   dot: {
     width: ms(8),

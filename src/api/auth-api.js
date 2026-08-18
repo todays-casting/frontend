@@ -3,8 +3,13 @@ import {
   stopPushTokenSync,
   syncPushTokenWithServer,
 } from "../services/notifications";
+import {
+  clearTodayRecordSession,
+  setTodayRecordStateScope,
+} from "../services/todayRecordState";
 
 const publicRequestConfig = {
+  skipAuth: true,
   headers: {
     Authorization: undefined,
   },
@@ -16,6 +21,25 @@ const syncNotificationsAfterAuth = () => {
   });
 };
 
+const unwrapAuthResponse = (data) => data?.result ?? data;
+
+const requireAccessToken = (result, message) => {
+  if (!result?.accessToken) {
+    throw new Error(message);
+  }
+
+  return result.accessToken;
+};
+
+const getAuthScope = (fallback, data) =>
+  data?.userId ??
+  data?.id ??
+  data?.memberId ??
+  data?.email ??
+  data?.user?.id ??
+  data?.member?.id ??
+  fallback;
+
 const signUpStepOne = async ({ email, password, passwordConfirm }) => {
   const response = await client.post(
     "/auth/signup/step1",
@@ -23,7 +47,7 @@ const signUpStepOne = async ({ email, password, passwordConfirm }) => {
     publicRequestConfig
   );
 
-  return response.data;
+  return unwrapAuthResponse(response.data);
 };
 
 const signUpStepTwo = async ({ userId, nickname, age, gender }) => {
@@ -33,9 +57,16 @@ const signUpStepTwo = async ({ userId, nickname, age, gender }) => {
     publicRequestConfig
   );
 
-  setAccessToken(response.data.accessToken);
+  const result = unwrapAuthResponse(response.data);
+  const accessToken = requireAccessToken(
+    result,
+    "회원가입 응답에 accessToken이 없습니다."
+  );
+
+  setAccessToken(accessToken);
+  setTodayRecordStateScope(getAuthScope(userId, result));
   syncNotificationsAfterAuth();
-  return response.data;
+  return result;
 };
 
 const login = async ({ email, password }) => {
@@ -45,9 +76,16 @@ const login = async ({ email, password }) => {
     publicRequestConfig
   );
 
-  setAccessToken(response.data.accessToken);
+  const result = unwrapAuthResponse(response.data);
+  const accessToken = requireAccessToken(
+    result,
+    "로그인 응답에 accessToken이 없습니다."
+  );
+
+  setAccessToken(accessToken);
+  setTodayRecordStateScope(getAuthScope(email.trim(), result));
   syncNotificationsAfterAuth();
-  return response.data;
+  return result;
 };
 
 const kakaoLogin = async ({ accessToken }) => {
@@ -57,12 +95,15 @@ const kakaoLogin = async ({ accessToken }) => {
     publicRequestConfig
   );
 
-  if (!response.data.isNewUser && response.data.accessToken) {
-    setAccessToken(response.data.accessToken);
+  const result = unwrapAuthResponse(response.data);
+
+  if (!result.isNewUser && result.accessToken) {
+    setAccessToken(result.accessToken);
+    setTodayRecordStateScope(getAuthScope(accessToken, result));
     syncNotificationsAfterAuth();
   }
 
-  return response.data;
+  return result;
 };
 
 const requestPasswordReset = async ({ email }) => {
@@ -88,11 +129,20 @@ const changePassword = async ({ currentPassword, newPassword, newPasswordConfirm
     newPasswordConfirm,
   });
   setAccessToken(null);
+  clearTodayRecordSession();
+  stopPushTokenSync();
+};
+
+const deleteAccount = async () => {
+  await client.delete("/auth/me");
+  setAccessToken(null);
+  clearTodayRecordSession();
   stopPushTokenSync();
 };
 
 const logout = () => {
   setAccessToken(null);
+  clearTodayRecordSession();
   stopPushTokenSync();
 };
 
@@ -104,6 +154,7 @@ const authApi = {
   requestPasswordReset,
   confirmPasswordReset,
   changePassword,
+  deleteAccount,
   logout,
 };
 

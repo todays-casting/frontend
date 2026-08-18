@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   Animated,
   Image,
@@ -17,7 +17,6 @@ import {
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import { Image as ExpoImage } from "expo-image";
 import Svg, {
   ClipPath,
   Defs,
@@ -29,6 +28,7 @@ import calendarApi from "../api/calendar-api";
 import castingsApi from "../api/castings-api";
 import recordsApi from "../api/records-api";
 import { useUser } from "../contexts/UserContext";
+import { notifyFavoriteChanged, subscribeFavoriteChanges } from "../services/favoriteState";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const scale = Math.min(Math.max(SCREEN_WIDTH / 393, 0.82), 1.15);
@@ -40,6 +40,8 @@ const CALENDAR_CARD_PATH =
 const CASTING_CARD_PATH =
   "M31 1 H174 C179 14 188 21 202 21 C216 21 225 14 230 1 H373 C383 1 390 8 390 18 C399 19 404 26 404 36 V555 C404 565 398 571 388 571 C388 579 381 583 372 583 H32 C23 583 16 579 16 571 C6 571 0 565 0 555 V36 C0 26 6 20 14 18 C14 8 21 1 31 1 Z";
 const CASTING_CARD_BACKGROUND = require("../../assets/images/casting-card-sunset-background-v2.jpg");
+const EMPTY_PAST_DAY_QUOTE = "아직 이 날의 장면은 비어 있어요.";
+const EMPTY_FUTURE_DAY_QUOTE = "다가올 캐스팅을 기다려주세요.";
 
 const DAYS = ["일", "월", "화", "수", "목", "금", "토"];
 const toDateKey = (date) =>
@@ -47,10 +49,27 @@ const toDateKey = (date) =>
     date.getDate()
   ).padStart(2, "0")}`;
 
+const getUserTodayKey = () => toDateKey(new Date());
+
+const isFutureDateKey = (dateKey) => dateKey > getUserTodayKey();
+
 const formatFullDate = (date) =>
   `${date.getFullYear()}.${String(date.getMonth() + 1).padStart(2, "0")}.${String(
     date.getDate()
   ).padStart(2, "0")}`;
+
+const isPlaceholderImageUrl = (value) =>
+  typeof value === "string" &&
+  /\/default-[^/?#]+\.png(?:[?#].*)?$/i.test(value);
+
+const hasCompleteCastingImage = (casting) =>
+  Boolean(
+    casting &&
+      typeof casting.imageUrl === "string" &&
+      casting.imageUrl.trim().length > 0 &&
+      !isPlaceholderImageUrl(casting.imageUrl) &&
+      (casting.hasGeneratedImage || casting.hasGeneratedImageUrl || casting.imageKey)
+  );
 
 const createCalendarDays = (year, month, today) => {
   const firstDay = new Date(year, month, 1);
@@ -102,6 +121,9 @@ export default function CalendarScreen({ navigation }) {
   const [monthlyMarkers, setMonthlyMarkers] = useState([]);
   const [calendarError, setCalendarError] = useState("");
   const [recordError, setRecordError] = useState("");
+  const [futureDateModalVisible, setFutureDateModalVisible] = useState(false);
+  const [activeDateOneLineComment, setActiveDateOneLineComment] = useState("");
+  const [activeDateImageUrl, setActiveDateImageUrl] = useState("");
   const [recordLoading, setRecordLoading] = useState(false);
   const [favoriteLoading, setFavoriteLoading] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState(null);
@@ -144,6 +166,13 @@ export default function CalendarScreen({ navigation }) {
   const selectedDateKey = selectedDate ? toDateKey(selectedDate) : null;
   const activeDateKey = toDateKey(activeDate);
   const activeDateHasRecord = recordDates.has(activeDateKey);
+  const emptyDayQuote = isFutureDateKey(activeDateKey)
+    ? EMPTY_FUTURE_DAY_QUOTE
+    : EMPTY_PAST_DAY_QUOTE;
+  const quoteImageSource =
+    activeDateHasRecord && activeDateImageUrl
+      ? { uri: activeDateImageUrl }
+      : QUOTE_BACKGROUND;
   const markedDateKey =
     visibleMonth.getFullYear() === activeDate.getFullYear() &&
     visibleMonth.getMonth() === activeDate.getMonth()
@@ -151,7 +180,11 @@ export default function CalendarScreen({ navigation }) {
       : null;
   const selectedCardRecord = selectedCasting
     ? {
-        title: selectedCasting.highlight || selectedCasting.characterPhrase,
+        title:
+          selectedCasting.roleName ||
+          selectedCasting.characterName ||
+          selectedCasting.role ||
+          selectedCasting.castingTitle,
         genre: selectedCasting.genre,
         role: selectedCasting.roleName,
         scene: selectedCasting.scenePhrase,
@@ -159,46 +192,127 @@ export default function CalendarScreen({ navigation }) {
         imageUrl: selectedCasting.imageUrl,
       }
     : RECORD;
+  const calendarReturnTo = useMemo(() => ({ screen: "Calendar" }), []);
+
+  const loadMonthlyMarkers = useCallback(async (isActive = () => true) => {
+    try {
+      setCalendarError("");
+      const markers = await calendarApi.getMonthlyMarkers(yearMonth);
+
+      if (!isActive()) {
+        return;
+      }
+
+      setMonthlyMarkers(markers);
+      setFavoriteDates(
+        new Set(
+          markers
+            .filter((marker) => marker.hasRecord && marker.isFavorite)
+            .map((marker) => marker.recordDate)
+        )
+      );
+    } catch (error) {
+      if (!isActive()) {
+        return;
+      }
+
+      setMonthlyMarkers([]);
+      setFavoriteDates(new Set());
+      setCalendarError(
+        error.response?.data?.message ?? "달력 기록을 불러오지 못했습니다."
+      );
+    }
+  }, [yearMonth]);
 
   useEffect(() => {
     let active = true;
 
-    const loadMonthlyMarkers = async () => {
+    loadMonthlyMarkers(() => active);
+    const unsubscribeFocus = navigation?.addListener?.("focus", () => {
+      loadMonthlyMarkers(() => active);
+    });
+
+    return () => {
+      active = false;
+      unsubscribeFocus?.();
+    };
+  }, [loadMonthlyMarkers, navigation]);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadActiveDateComment = async () => {
+      if (!activeDateHasRecord) {
+        setActiveDateOneLineComment("");
+        setActiveDateImageUrl("");
+        return;
+      }
+
       try {
-        setCalendarError("");
-        const markers = await calendarApi.getMonthlyMarkers(yearMonth);
+        const record = await recordsApi.getRecordByDate(activeDateKey);
 
-        if (!active) {
+        if (!record?.id || record.status !== "COMPLETED") {
+          if (active) {
+            setActiveDateOneLineComment("");
+            setActiveDateImageUrl("");
+          }
           return;
         }
 
-        setMonthlyMarkers(markers);
-        setFavoriteDates(
-          new Set(
-            markers
-              .filter((marker) => marker.hasRecord && marker.isFavorite)
-              .map((marker) => marker.recordDate)
-          )
-        );
-      } catch (error) {
-        if (!active) {
-          return;
-        }
+        const casting = await castingsApi.getCastingByRecordId(record.id);
 
-        setMonthlyMarkers([]);
-        setFavoriteDates(new Set());
-        setCalendarError(
-          error.response?.data?.message ?? "달력 기록을 불러오지 못했습니다."
-        );
+        if (active) {
+          setActiveDateOneLineComment(casting?.oneLineComment ?? "");
+          setActiveDateImageUrl(hasCompleteCastingImage(casting) ? casting.imageUrl : "");
+        }
+      } catch {
+        if (active) {
+          setActiveDateOneLineComment("");
+          setActiveDateImageUrl("");
+        }
       }
     };
 
-    loadMonthlyMarkers();
+    loadActiveDateComment();
 
     return () => {
       active = false;
     };
-  }, [yearMonth]);
+  }, [activeDateHasRecord, activeDateKey]);
+
+  useEffect(
+    () =>
+      subscribeFavoriteChanges(({ recordId, dateKey, isFavorite }) => {
+        if (!dateKey || typeof isFavorite !== "boolean") {
+          return;
+        }
+
+        setFavoriteDates((current) => {
+          const next = new Set(current);
+
+          if (isFavorite) {
+            next.add(dateKey);
+          } else {
+            next.delete(dateKey);
+          }
+
+          return next;
+        });
+        setMonthlyMarkers((current) =>
+          current.map((marker) =>
+            marker.recordDate === dateKey ? { ...marker, isFavorite } : marker
+          )
+        );
+        setSelectedCasting((current) => {
+          const currentRecordId = current?.dailyRecordId ?? selectedRecord?.id;
+
+          return String(currentRecordId) === String(recordId)
+            ? { ...current, isFavorite }
+            : current;
+        });
+      }),
+    [selectedRecord?.id]
+  );
 
   const frontRotate = flip.interpolate({
     inputRange: [0, 1],
@@ -214,6 +328,8 @@ export default function CalendarScreen({ navigation }) {
     if (day.muted) {
       return;
     }
+
+    let recordIdForLoading = null;
 
     setActiveDate(day.date);
     setIsBack(false);
@@ -241,7 +357,25 @@ export default function CalendarScreen({ navigation }) {
         return;
       }
 
+      recordIdForLoading = record.id;
       const casting = await castingsApi.getCastingByRecordId(record.id);
+
+      if (!hasCompleteCastingImage(casting)) {
+        const rootNavigation = navigation?.getParent?.();
+        const loadingParams = {
+          recordId: record.id,
+          recordDate: day.key,
+          returnTo: calendarReturnTo,
+        };
+
+        if (rootNavigation) {
+          rootNavigation.navigate("AnalysisLoading", loadingParams);
+        } else {
+          navigation?.navigate?.("AnalysisLoading", loadingParams);
+        }
+        return;
+      }
+
       setSelectedRecord(record);
       setSelectedCasting(casting);
       setFavoriteDates((current) => {
@@ -265,6 +399,24 @@ export default function CalendarScreen({ navigation }) {
         }).start();
       });
     } catch (error) {
+      if ([404, 409].includes(error?.response?.status)) {
+        const rootNavigation = navigation?.getParent?.();
+        const loadingParams = {
+          recordId: recordIdForLoading,
+          recordDate: day.key,
+          returnTo: calendarReturnTo,
+        };
+
+        if (loadingParams.recordId) {
+          if (rootNavigation) {
+            rootNavigation.navigate("AnalysisLoading", loadingParams);
+          } else {
+            navigation?.navigate?.("AnalysisLoading", loadingParams);
+          }
+          return;
+        }
+      }
+
       setRecordError(
         error.response?.data?.message ?? "선택한 날짜의 카드를 불러오지 못했습니다."
       );
@@ -338,8 +490,90 @@ export default function CalendarScreen({ navigation }) {
     setIsMonthPickerOpen(false);
   };
 
-  const goToRecordInput = () => {
-    navigation?.navigate?.("Input");
+  const goToRecordInput = async () => {
+    const dateKey = activeDateKey;
+
+    if (isFutureDateKey(dateKey)) {
+      setRecordError("");
+      setFutureDateModalVisible(true);
+      return;
+    }
+
+    if (!recordDates.has(dateKey)) {
+      navigation?.navigate?.("DailyRecord", {
+        recordDate: dateKey,
+        returnTo: calendarReturnTo,
+      });
+      return;
+    }
+
+    try {
+      setRecordLoading(true);
+      setRecordError("");
+      const record = await recordsApi.getRecordByDate(dateKey);
+
+      if (!record?.id || record.status !== "COMPLETED") {
+        navigation?.navigate?.("DailyRecord", {
+          recordDate: dateKey,
+          returnTo: calendarReturnTo,
+        });
+        return;
+      }
+
+      let casting = null;
+
+      try {
+        casting = await castingsApi.getCastingByRecordId(record.id);
+      } catch (error) {
+        const statusCode = error?.response?.status;
+
+        if ([400, 404, 409].includes(statusCode)) {
+          const rootNavigation = navigation?.getParent?.();
+          const loadingParams = {
+            recordId: record.id,
+            recordDate: dateKey,
+            returnTo: calendarReturnTo,
+            shouldStartGeneration: true,
+          };
+
+          if (rootNavigation) {
+            rootNavigation.navigate("AnalysisLoading", loadingParams);
+          } else {
+            navigation?.navigate?.("AnalysisLoading", loadingParams);
+          }
+          return;
+        }
+
+        throw error;
+      }
+
+      const params = {
+        recordId: record.id,
+        recordDate: dateKey,
+        returnTo: calendarReturnTo,
+        result: {
+          ...casting,
+          recordId: record.id,
+          recordDate: dateKey,
+        },
+      };
+      const rootNavigation = navigation?.getParent?.();
+
+      if (rootNavigation) {
+        rootNavigation.navigate("Main", {
+          screen: "Result",
+          params,
+        });
+      } else {
+        navigation?.navigate?.("Result", params);
+      }
+    } catch (error) {
+      setRecordError(
+        error.response?.data?.message ?? "선택한 날짜의 결과를 불러오지 못했습니다."
+      );
+    } finally {
+      setRecordLoading(false);
+    }
   };
 
   const toggleFavorite = async () => {
@@ -369,6 +603,11 @@ export default function CalendarScreen({ navigation }) {
         }
 
         return next;
+      });
+      notifyFavoriteChanged({
+        recordId,
+        dateKey: selectedDateKey,
+        isFavorite: updatedCasting.isFavorite,
       });
     } catch (error) {
       setRecordError(
@@ -602,10 +841,11 @@ export default function CalendarScreen({ navigation }) {
 
             <View style={styles.quoteCard}>
               <Image
-                source={QUOTE_BACKGROUND}
+                source={quoteImageSource}
                 style={styles.quoteImage}
                 resizeMode="cover"
               />
+              <View style={styles.quoteScrim} />
               <View style={styles.quoteDate}>
               <Text style={styles.quoteDateText}>
                 {activeDate.getMonth() + 1}.{activeDate.getDate()}
@@ -615,11 +855,11 @@ export default function CalendarScreen({ navigation }) {
               </Text>
             </View>
             <View style={styles.quoteDivider} />
-            {activeDateHasRecord && (
-              <Text style={styles.quoteText}>
-                “따뜻한 마음과 깊은 공감으로{"\n"}사랑을 만들어가는 당신”
-              </Text>
-            )}
+            <Text style={styles.quoteText}>
+              {activeDateHasRecord && activeDateOneLineComment
+                ? `“${activeDateOneLineComment}”`
+                : emptyDayQuote}
+            </Text>
             </View>
 
           <View style={styles.recordCard}>
@@ -706,6 +946,27 @@ export default function CalendarScreen({ navigation }) {
           </Animated.View>
         </View>
       </Modal>
+      <Modal
+        visible={futureDateModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setFutureDateModalVisible(false)}
+      >
+        <View style={styles.futureModalOverlay}>
+          <View style={styles.futureModalCard}>
+            <Text style={styles.futureModalTitle}>
+              아직 캐스팅 기간이 아니에요!
+            </Text>
+            <TouchableOpacity
+              activeOpacity={0.85}
+              style={styles.futureModalButton}
+              onPress={() => setFutureDateModalVisible(false)}
+            >
+              <Text style={styles.futureModalButtonText}>확인했어요</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </ImageBackground>
   );
 }
@@ -718,43 +979,28 @@ export function CastingCardFront({
   record = RECORD,
   eyebrow = "TODAY’S CASTING",
   rows,
+  showInfoPanel = true,
+  showFlipButton = true,
 }) {
-  const [remoteImageReady, setRemoteImageReady] = useState(false);
+  const reactId = useId();
+  const clipPathId = useMemo(
+    () => `castingCardClip-${String(reactId).replace(/[^a-zA-Z0-9_-]/g, "")}`,
+    [reactId]
+  );
+  const [remoteImageFailed, setRemoteImageFailed] = useState(false);
   const imageUrl =
     typeof record.imageUrl === "string" ? record.imageUrl.trim() : "";
 
   useEffect(() => {
-    let active = true;
-    setRemoteImageReady(false);
-
-    if (!imageUrl) {
-      return () => {
-        active = false;
-      };
-    }
-
-    ExpoImage.prefetch(imageUrl, "memory-disk")
-      .then((loaded) => {
-        if (active) {
-          setRemoteImageReady(loaded);
-        }
-      })
-      .catch(() => {
-        if (active) {
-          setRemoteImageReady(false);
-        }
-      });
-
-    return () => {
-      active = false;
-    };
+    setRemoteImageFailed(false);
   }, [imageUrl]);
+  const cardImageSource =
+    imageUrl && !remoteImageFailed ? imageUrl : CASTING_CARD_BACKGROUND;
 
   const infoRows = rows ?? [
     { icon: "movie-open-outline", label: "오늘의 장르", text: record.genre },
-    { icon: "account-outline", label: "오늘의 배역", text: record.role },
+    { icon: "pencil-outline", label: "오늘의 한줄 기록", text: record.line },
     { icon: "image-outline", label: "기억에 남은 장면", text: record.scene },
-    { icon: "star-four-points-outline", label: "오늘의 한줄 기록", text: `“${record.line}”` },
   ];
 
   return (
@@ -768,19 +1014,19 @@ export function CastingCardFront({
         style={styles.frontArtwork}
       >
         <Defs>
-          <ClipPath id="castingCardClip">
+          <ClipPath id={clipPathId}>
             <Path d={CASTING_CARD_PATH} />
           </ClipPath>
         </Defs>
         <SvgImage
-          href={remoteImageReady ? { uri: imageUrl } : CASTING_CARD_BACKGROUND}
+          href={cardImageSource}
           x="0"
           y="0"
           width="404"
           height="584"
           preserveAspectRatio="xMidYMid slice"
-          clipPath="url(#castingCardClip)"
-          onError={() => setRemoteImageReady(false)}
+          clipPath={`url(#${clipPathId})`}
+          onError={() => setRemoteImageFailed(true)}
         />
         <Rect
           x="0"
@@ -788,7 +1034,7 @@ export function CastingCardFront({
           width="404"
           height="584"
           fill="rgba(25, 9, 43, 0.12)"
-          clipPath="url(#castingCardClip)"
+          clipPath={`url(#${clipPathId})`}
         />
         <Path
           d={CASTING_CARD_PATH}
@@ -813,20 +1059,24 @@ export function CastingCardFront({
         />
       </TouchableOpacity>
 
-      <View style={styles.infoPanel}>
-        {infoRows.map((row, index) => (
-          <InfoRow
-            key={`${row.label}-${index}`}
-            {...row}
-            last={index === infoRows.length - 1}
-          />
-        ))}
+      {showInfoPanel && (
+        <View style={styles.infoPanel}>
+          {infoRows.map((row, index) => (
+            <InfoRow
+              key={`${row.label}-${index}`}
+              {...row}
+              last={index === infoRows.length - 1}
+            />
+          ))}
 
-        <TouchableOpacity activeOpacity={0.82} style={styles.flipButton} onPress={onFlip}>
-          <Text style={styles.flipButtonText}>뒷면 보기</Text>
-          <Ionicons name="arrow-forward" size={ms(22)} color="#FF8D4C" />
-        </TouchableOpacity>
-      </View>
+          {showFlipButton && (
+            <TouchableOpacity activeOpacity={0.82} style={styles.flipButton} onPress={onFlip}>
+              <Text style={styles.flipButtonText}>뒷면 보기</Text>
+              <Ionicons name="arrow-forward" size={ms(22)} color="#FF8D4C" />
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
     </>
   );
 }
@@ -1176,7 +1426,7 @@ const styles = StyleSheet.create({
   },
   calendarHeart: {
     position: "absolute",
-    top: vs(25),
+    top: vs(31),
     left: "50%",
     transform: [{ translateX: ms(-4) }],
     zIndex: 2,
@@ -1222,6 +1472,11 @@ const styles = StyleSheet.create({
     left: 0,
     width: "100%",
     height: "100%",
+    zIndex: 0,
+  },
+  quoteScrim: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(30, 10, 48, 0.34)",
     zIndex: 0,
   },
   quoteDate: {
@@ -1313,6 +1568,48 @@ const styles = StyleSheet.create({
     fontFamily: "NanumSquareNeo",
     fontSize: ms(10),
     lineHeight: ms(15),
+  },
+  futureModalOverlay: {
+    flex: 1,
+    paddingHorizontal: ms(32),
+    backgroundColor: "rgba(4, 5, 18, 0.72)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  futureModalCard: {
+    width: "100%",
+    maxWidth: ms(320),
+    paddingHorizontal: ms(22),
+    paddingTop: vs(28),
+    paddingBottom: vs(20),
+    borderRadius: ms(20),
+    borderWidth: 1,
+    borderColor: "rgba(255, 160, 100, 0.58)",
+    backgroundColor: "rgba(31, 18, 49, 0.98)",
+    alignItems: "center",
+  },
+  futureModalTitle: {
+    color: "#FFE0B8",
+    fontFamily: "MaruBuriSemiBold",
+    fontSize: ms(18),
+    lineHeight: ms(28),
+    textAlign: "center",
+  },
+  futureModalButton: {
+    marginTop: vs(22),
+    minWidth: ms(132),
+    height: vs(43),
+    paddingHorizontal: ms(20),
+    borderRadius: ms(22),
+    backgroundColor: "#FF8150",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  futureModalButtonText: {
+    color: "#FFFFFF",
+    fontFamily: "NanumSquareNeo",
+    fontSize: ms(14),
+    lineHeight: ms(20),
   },
   modalLayer: {
     flex: 1,

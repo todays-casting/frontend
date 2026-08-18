@@ -9,11 +9,20 @@ import CalendarScreen from "../screens/CalendarScreen";
 import HistoryScreen from "../screens/HistoryScreen";
 import DailyRecordScreen from "../screens/DailyRecordScreen";
 import MyPageScreen from "../screens/MyPageScreen";
+import ResultScreen from "../screens/ResultScreen";
 import {
+  getTodayDateKey,
   getTodayRecordState,
+  setTodayResultReady,
   subscribeTodayRecordState,
 } from "../services/todayRecordState";
+import {
+  getNavigationUiState,
+  subscribeNavigationUiState,
+} from "../services/navigationUiState";
 import { UserProvider } from "../contexts/UserContext";
+import { findNavigationWithRoute } from "../services/flowNavigation";
+import { resolveTodayCastingTarget } from "../services/todayCastingResolver";
 
 const Tab = createBottomTabNavigator();
 
@@ -24,6 +33,8 @@ const TAB_LABELS = {
   History: "\uD788\uC2A4\uD1A0\uB9AC",
   MyPage: "\uB9C8\uC774\uD398\uC774\uC9C0",
 };
+
+const VISIBLE_TABS = ["Home", "Calendar", "DailyRecord", "History", "MyPage"];
 
 function TabIcon({ routeName, focused }) {
   const color = focused ? "#FFC17B" : "rgba(255, 255, 255, 0.62)";
@@ -56,8 +67,20 @@ function TabIcon({ routeName, focused }) {
 function CustomTabBar({ state, descriptors, navigation }) {
   const insets = useSafeAreaInsets();
   const [todayState, setTodayState] = useState(() => getTodayRecordState());
+  const [navigationUiState, setNavigationUiState] = useState(() =>
+    getNavigationUiState()
+  );
+  const activeRouteName = state.routes[state.index]?.name;
 
   useEffect(() => subscribeTodayRecordState(setTodayState), []);
+  useEffect(() => subscribeNavigationUiState(setNavigationUiState), []);
+
+  if (
+    navigationUiState.analysisLoadingVisible ||
+    (activeRouteName === "Result" && !todayState.resultReady)
+  ) {
+    return null;
+  }
 
   return (
     <View
@@ -75,10 +98,24 @@ function CustomTabBar({ state, descriptors, navigation }) {
         ]}
       >
         {state.routes.map((route, index) => {
+          if (!VISIBLE_TABS.includes(route.name)) {
+            return null;
+          }
+
           const focused = state.index === index;
           const { options } = descriptors[route.key];
 
-          const onPress = () => {
+          const onPress = async () => {
+            const activeRoute = state.routes[state.index];
+            const returnTo =
+              route.name === "DailyRecord"
+                ? {
+                    screen:
+                      activeRoute?.name && activeRoute.name !== "DailyRecord"
+                        ? activeRoute.name
+                        : "Home",
+                  }
+                : undefined;
             const event = navigation.emit({
               type: "tabPress",
               target: route.key,
@@ -89,8 +126,58 @@ function CustomTabBar({ state, descriptors, navigation }) {
               return;
             }
 
-            if (route.name === "DailyRecord" && todayState.resultReady) {
-              navigation.getParent()?.navigate("Result");
+            if (route.name === "DailyRecord") {
+              try {
+                const target = await resolveTodayCastingTarget();
+                const recordId = target.recordId;
+                const recordDate = target.recordDate ?? getTodayDateKey();
+
+                if (target.screen === "RESULT" && target.casting) {
+                  setTodayResultReady(true, {
+                    ...target.casting,
+                    recordId,
+                    recordDate,
+                  });
+
+                  navigation.navigate("Result", {
+                    recordId,
+                    recordDate,
+                    returnTo,
+                    result: {
+                      ...target.casting,
+                      recordId,
+                      recordDate,
+                    },
+                  });
+                  return;
+                }
+
+                if (["WAITING", "RESULT"].includes(target.screen) && recordId) {
+                  const rootNavigation = findNavigationWithRoute(
+                    navigation,
+                    "AnalysisLoading"
+                  );
+                  const loadingParams = {
+                    recordId,
+                    recordDate,
+                    returnTo,
+                  };
+
+                  if (rootNavigation) {
+                    rootNavigation.navigate("AnalysisLoading", loadingParams);
+                  } else {
+                    navigation.navigate("AnalysisLoading", loadingParams);
+                  }
+                  return;
+                }
+              } catch (error) {
+                console.warn("Failed to check today status:", error);
+              }
+
+              navigation.navigate("DailyRecord", {
+                recordDate: getTodayDateKey(),
+                returnTo,
+              });
               return;
             }
 
@@ -175,6 +262,7 @@ export default function BottomTabNavigator() {
         <Tab.Screen name="DailyRecord" component={DailyRecordScreen} />
         <Tab.Screen name="History" component={HistoryScreen} />
         <Tab.Screen name="MyPage" component={MyPageScreen} />
+        <Tab.Screen name="Result" component={ResultScreen} />
       </Tab.Navigator>
     </UserProvider>
   );

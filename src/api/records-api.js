@@ -20,6 +20,12 @@ const getRecordById = async (recordId) => {
   return response.data.result;
 };
 
+const getTodayStatus = async () => {
+  const response = await client.get("/records/today-status");
+
+  return response.data.result ?? response.data;
+};
+
 const updateRecord = async (recordId, record) => {
   const response = await client.put(`/records/${recordId}`, record);
 
@@ -36,6 +42,7 @@ const recordsApi = {
   createRecord,
   getRecordByDate,
   getRecordById,
+  getTodayStatus,
   updateRecord,
   getRecordTemplate,
 };
