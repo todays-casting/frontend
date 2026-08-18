@@ -19,6 +19,12 @@ const COPY = {
   empty: "\uC0C8 \uC54C\uB9BC\uC774 \uC5C6\uC5B4\uC694.",
 };
 
+const getNotificationKey = (item, index) =>
+  item?.dedupeKey ??
+  item?.data?.dedupeKey ??
+  item?.id ??
+  `${item?.title ?? "notification"}-${item?.time ?? "time"}-${index}`;
+
 export default function NotificationSheet({
   visible,
   notifications = [],
@@ -57,8 +63,8 @@ export default function NotificationSheet({
             bounces={false}
           >
             {notifications.length > 0 ? (
-              notifications.map((item) => (
-                <View key={`${item.title}-${item.time}`} style={styles.item}>
+              notifications.map((item, index) => (
+                <View key={getNotificationKey(item, index)} style={styles.item}>
                   <View style={[styles.iconWrap, item.unread && styles.unreadIconWrap]}>
                     <MaterialCommunityIcons
                       name={item.icon || "bell-outline"}

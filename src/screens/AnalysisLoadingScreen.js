@@ -22,6 +22,7 @@ import {
 import analysesApi from "../api/analyses-api";
 import castingsApi from "../api/castings-api";
 import recordsApi from "../api/records-api";
+import { addNotification } from "../services/notificationState";
 
 const COPY = {
   eyebrow: "✦  분석 중이에요  ✦",
@@ -30,7 +31,7 @@ const COPY = {
   line2: "감정과 순간들을 정리하고 있어요.",
   loading: "분석 중",
   tipTitle: "TIP",
-  tip: "기록할수록 더 정확한 분석을 받을 수 있어요!",
+  tip: "자세히 기록할수록 더 정확한 분석을 받을 수 있어요!",
 };
 
 const pickFirst = (...values) =>
@@ -478,6 +479,18 @@ export default function AnalysisLoadingScreen({ navigation, route }) {
         if (isTodayRecord) {
           setTodayResultReady(true, result);
         }
+        addNotification({
+          id: `casting-ready-${recordId}`,
+          dedupeKey: `casting-ready-${recordId}`,
+          title: "캐스팅 카드 준비됨",
+          body: "오늘의 캐스팅 카드가 완성되었어요.",
+          time: `${String(new Date().getHours()).padStart(2, "0")}:${String(
+            new Date().getMinutes()
+          ).padStart(2, "0")}`,
+          icon: "movie-open-star-outline",
+          unread: true,
+          data: { dedupeKey: `casting-ready-${recordId}`, recordId },
+        });
         navigateResult(navigation, recordId, result, routeRecordDate, returnTo);
       } catch (error) {
         if (![404, 409].includes(error?.response?.status)) {

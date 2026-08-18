@@ -47,6 +47,10 @@ const toDateKey = (date) =>
     date.getDate()
   ).padStart(2, "0")}`;
 
+const getUserTodayKey = () => toDateKey(new Date());
+
+const isFutureDateKey = (dateKey) => dateKey > getUserTodayKey();
+
 const formatFullDate = (date) =>
   `${date.getFullYear()}.${String(date.getMonth() + 1).padStart(2, "0")}.${String(
     date.getDate()
@@ -115,6 +119,8 @@ export default function CalendarScreen({ navigation }) {
   const [monthlyMarkers, setMonthlyMarkers] = useState([]);
   const [calendarError, setCalendarError] = useState("");
   const [recordError, setRecordError] = useState("");
+  const [futureDateModalVisible, setFutureDateModalVisible] = useState(false);
+  const [activeDateOneLineComment, setActiveDateOneLineComment] = useState("");
   const [recordLoading, setRecordLoading] = useState(false);
   const [favoriteLoading, setFavoriteLoading] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState(null);
@@ -221,6 +227,40 @@ export default function CalendarScreen({ navigation }) {
       unsubscribeFocus?.();
     };
   }, [loadMonthlyMarkers, navigation]);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadActiveDateComment = async () => {
+      if (!activeDateHasRecord) {
+        setActiveDateOneLineComment("");
+        return;
+      }
+
+      try {
+        const record = await recordsApi.getRecordByDate(activeDateKey);
+
+        if (!record?.id || record.status !== "COMPLETED") {
+          if (active) setActiveDateOneLineComment("");
+          return;
+        }
+
+        const casting = await castingsApi.getCastingByRecordId(record.id);
+
+        if (active) {
+          setActiveDateOneLineComment(casting?.oneLineComment ?? "");
+        }
+      } catch {
+        if (active) setActiveDateOneLineComment("");
+      }
+    };
+
+    loadActiveDateComment();
+
+    return () => {
+      active = false;
+    };
+  }, [activeDateHasRecord, activeDateKey]);
 
   useEffect(
     () =>
@@ -434,6 +474,12 @@ export default function CalendarScreen({ navigation }) {
 
   const goToRecordInput = async () => {
     const dateKey = activeDateKey;
+
+    if (isFutureDateKey(dateKey)) {
+      setRecordError("");
+      setFutureDateModalVisible(true);
+      return;
+    }
 
     if (!recordDates.has(dateKey)) {
       navigation?.navigate?.("DailyRecord", {
@@ -790,11 +836,11 @@ export default function CalendarScreen({ navigation }) {
               </Text>
             </View>
             <View style={styles.quoteDivider} />
-            {activeDateHasRecord && (
+            {activeDateHasRecord && activeDateOneLineComment ? (
               <Text style={styles.quoteText}>
-                “따뜻한 마음과 깊은 공감으로{"\n"}사랑을 만들어가는 당신”
+                “{activeDateOneLineComment}”
               </Text>
-            )}
+            ) : null}
             </View>
 
           <View style={styles.recordCard}>
@@ -881,6 +927,27 @@ export default function CalendarScreen({ navigation }) {
           </Animated.View>
         </View>
       </Modal>
+      <Modal
+        visible={futureDateModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setFutureDateModalVisible(false)}
+      >
+        <View style={styles.futureModalOverlay}>
+          <View style={styles.futureModalCard}>
+            <Text style={styles.futureModalTitle}>
+              아직 캐스팅 기간이 아니에요!
+            </Text>
+            <TouchableOpacity
+              activeOpacity={0.85}
+              style={styles.futureModalButton}
+              onPress={() => setFutureDateModalVisible(false)}
+            >
+              <Text style={styles.futureModalButtonText}>확인했어요</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </ImageBackground>
   );
 }
@@ -913,9 +980,8 @@ export function CastingCardFront({
 
   const infoRows = rows ?? [
     { icon: "movie-open-outline", label: "오늘의 장르", text: record.genre },
-    { icon: "account-outline", label: "오늘의 배역", text: record.role },
+    { icon: "pencil-outline", label: "오늘의 한줄 기록", text: record.line },
     { icon: "image-outline", label: "기억에 남은 장면", text: record.scene },
-    { icon: "star-four-points-outline", label: "오늘의 한줄 기록", text: `“${record.line}”` },
   ];
 
   return (
@@ -1341,7 +1407,7 @@ const styles = StyleSheet.create({
   },
   calendarHeart: {
     position: "absolute",
-    top: vs(25),
+    top: vs(31),
     left: "50%",
     transform: [{ translateX: ms(-4) }],
     zIndex: 2,
@@ -1478,6 +1544,48 @@ const styles = StyleSheet.create({
     fontFamily: "NanumSquareNeo",
     fontSize: ms(10),
     lineHeight: ms(15),
+  },
+  futureModalOverlay: {
+    flex: 1,
+    paddingHorizontal: ms(32),
+    backgroundColor: "rgba(4, 5, 18, 0.72)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  futureModalCard: {
+    width: "100%",
+    maxWidth: ms(320),
+    paddingHorizontal: ms(22),
+    paddingTop: vs(28),
+    paddingBottom: vs(20),
+    borderRadius: ms(20),
+    borderWidth: 1,
+    borderColor: "rgba(255, 160, 100, 0.58)",
+    backgroundColor: "rgba(31, 18, 49, 0.98)",
+    alignItems: "center",
+  },
+  futureModalTitle: {
+    color: "#FFE0B8",
+    fontFamily: "MaruBuriSemiBold",
+    fontSize: ms(18),
+    lineHeight: ms(28),
+    textAlign: "center",
+  },
+  futureModalButton: {
+    marginTop: vs(22),
+    minWidth: ms(132),
+    height: vs(43),
+    paddingHorizontal: ms(20),
+    borderRadius: ms(22),
+    backgroundColor: "#FF8150",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  futureModalButtonText: {
+    color: "#FFFFFF",
+    fontFamily: "NanumSquareNeo",
+    fontSize: ms(14),
+    lineHeight: ms(20),
   },
   modalLayer: {
     flex: 1,

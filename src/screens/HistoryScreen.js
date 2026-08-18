@@ -66,12 +66,22 @@ const formatDateRange = (start, end) => {
   return `${start.getFullYear()}년 ${startMonth}월 ${startDay}일 ~ ${end.getFullYear()}년 ${endMonth}월 ${endDay}일`;
 };
 
-const getCurrentWeek = () => {
-  const today = new Date();
-  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate() - today.getDay());
-  const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6);
+const getCenteredWeek = (centerDate) => {
+  const start = new Date(
+    centerDate.getFullYear(),
+    centerDate.getMonth(),
+    centerDate.getDate() - 3
+  );
+  const end = new Date(
+    centerDate.getFullYear(),
+    centerDate.getMonth(),
+    centerDate.getDate() + 3
+  );
+
   return { start, end };
 };
+
+const getCurrentWeek = () => getCenteredWeek(new Date());
 
 const toYearMonth = (date) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
@@ -182,9 +192,9 @@ export default function HistoryScreen({ navigation }) {
   const initialWeek = useMemo(getCurrentWeek, []);
   const [week, setWeek] = useState(initialWeek);
   const [datePickerVisible, setDatePickerVisible] = useState(false);
-  const [startDateInput, setStartDateInput] = useState(() => toDateKey(initialWeek.start));
-  const [endDateInput, setEndDateInput] = useState(() => toDateKey(initialWeek.end));
+  const [centerDateInput, setCenterDateInput] = useState(() => toDateKey(new Date()));
   const [dateInputError, setDateInputError] = useState("");
+  const [futureDateModalVisible, setFutureDateModalVisible] = useState(false);
   const [historyRecords, setHistoryRecords] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [historyError, setHistoryError] = useState("");
@@ -388,33 +398,62 @@ export default function HistoryScreen({ navigation }) {
   };
 
   const openDatePicker = () => {
-    setStartDateInput(toDateKey(week.start));
-    setEndDateInput(toDateKey(week.end));
+    const center = new Date(
+      week.start.getFullYear(),
+      week.start.getMonth(),
+      week.start.getDate() + 3
+    );
+
+    setCenterDateInput(toDateKey(center));
     setDateInputError("");
     setDatePickerVisible(true);
   };
 
-  const applyDateRange = () => {
-    const start = parseDateInput(startDateInput);
-    const end = parseDateInput(endDateInput);
+  const moveWeek = (offsetDays) => {
+    setWeek((current) => {
+      const nextStart = new Date(
+        current.start.getFullYear(),
+        current.start.getMonth(),
+        current.start.getDate() + offsetDays
+      );
+      const nextEnd = new Date(
+        current.end.getFullYear(),
+        current.end.getMonth(),
+        current.end.getDate() + offsetDays
+      );
+      const today = new Date();
+      const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
 
-    if (!start || !end) {
+      if (nextStart > todayDate) {
+        setFutureDateModalVisible(true);
+        return current;
+      }
+
+      return {
+        start: nextStart,
+        end: nextEnd,
+      };
+    });
+  };
+
+  const applyCenteredDate = () => {
+    const selectedDate = parseDateInput(centerDateInput);
+
+    if (!selectedDate) {
       setDateInputError("날짜를 YYYY-MM-DD 형식으로 입력해주세요.");
       return;
     }
 
-    if (start > end) {
-      setDateInputError("시작일은 종료일보다 늦을 수 없어요.");
+    const today = new Date();
+    const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
+    if (selectedDate > todayDate) {
+      setDatePickerVisible(false);
+      setFutureDateModalVisible(true);
       return;
     }
 
-    const rangeDays = Math.floor((end - start) / 86400000) + 1;
-    if (rangeDays > 31) {
-      setDateInputError("조회 기간은 최대 31일까지 선택할 수 있어요.");
-      return;
-    }
-
-    setWeek({ start, end });
+    setWeek(getCenteredWeek(selectedDate));
     setDatePickerVisible(false);
   };
 
@@ -550,14 +589,16 @@ export default function HistoryScreen({ navigation }) {
             </TouchableOpacity>
           </View>
 
-          <TouchableOpacity
-            activeOpacity={0.8}
-            style={styles.weekPicker}
-            onPress={openDatePicker}
-            accessibilityRole="button"
-            accessibilityLabel="히스토리 조회 기간 선택"
-          >
-            <Ionicons name="calendar-outline" size={ms(20)} color="#FFB26D" />
+          <View style={styles.weekPicker}>
+            <TouchableOpacity
+              activeOpacity={0.75}
+              style={styles.weekArrowButton}
+              onPress={() => moveWeek(-7)}
+              accessibilityRole="button"
+              accessibilityLabel="이전 7일 보기"
+            >
+              <Ionicons name="chevron-back" size={ms(20)} color="#FFB26D" />
+            </TouchableOpacity>
             <Text
               style={styles.weekText}
               numberOfLines={1}
@@ -566,8 +607,25 @@ export default function HistoryScreen({ navigation }) {
             >
               {weekLabel}
             </Text>
-            <Ionicons name="chevron-down" size={ms(20)} color="#CE737D" />
-          </TouchableOpacity>
+            <TouchableOpacity
+              activeOpacity={0.75}
+              style={styles.weekArrowButton}
+              onPress={() => moveWeek(7)}
+              accessibilityRole="button"
+              accessibilityLabel="다음 7일 보기"
+            >
+              <Ionicons name="chevron-forward" size={ms(20)} color="#FFB26D" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              activeOpacity={0.75}
+              style={styles.weekCalendarButton}
+              onPress={openDatePicker}
+              accessibilityRole="button"
+              accessibilityLabel="기준 날짜 선택"
+            >
+              <Ionicons name="calendar-outline" size={ms(20)} color="#FFB26D" />
+            </TouchableOpacity>
+          </View>
 
           {hasHistoryRecords ? (
             <>
@@ -722,29 +780,15 @@ export default function HistoryScreen({ navigation }) {
         >
           <View style={styles.dateModalOverlay}>
             <View style={styles.dateModalCard}>
-              <Text style={styles.dateModalTitle}>조회 기간 입력</Text>
-              <Text style={styles.dateModalHelp}>YYYY-MM-DD 형식으로 입력해주세요.</Text>
+              <Text style={styles.dateModalTitle}>기준 날짜 선택</Text>
+              <Text style={styles.dateModalHelp}>선택한 날짜를 중심으로 7일을 보여드려요.</Text>
 
               <View style={styles.dateFieldGroup}>
-                <Text style={styles.dateFieldLabel}>시작일</Text>
+                <Text style={styles.dateFieldLabel}>기준 날짜</Text>
                 <TextInput
-                  value={startDateInput}
-                  onChangeText={setStartDateInput}
-                  placeholder="2026-08-01"
-                  placeholderTextColor="rgba(255, 208, 160, 0.4)"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  maxLength={10}
-                  style={styles.dateInput}
-                />
-              </View>
-
-              <View style={styles.dateFieldGroup}>
-                <Text style={styles.dateFieldLabel}>종료일</Text>
-                <TextInput
-                  value={endDateInput}
-                  onChangeText={setEndDateInput}
-                  placeholder="2026-08-31"
+                  value={centerDateInput}
+                  onChangeText={setCenterDateInput}
+                  placeholder="2026-08-18"
                   placeholderTextColor="rgba(255, 208, 160, 0.4)"
                   autoCapitalize="none"
                   autoCorrect={false}
@@ -768,11 +812,34 @@ export default function HistoryScreen({ navigation }) {
                 <TouchableOpacity
                   activeOpacity={0.85}
                   style={styles.dateApplyButton}
-                  onPress={applyDateRange}
+                  onPress={applyCenteredDate}
                 >
                   <Text style={styles.dateApplyText}>조회하기</Text>
                 </TouchableOpacity>
               </View>
+            </View>
+          </View>
+        </Modal>
+        <Modal
+          visible={futureDateModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setFutureDateModalVisible(false)}
+        >
+          <View style={styles.dateModalOverlay}>
+            <View style={styles.dateModalCard}>
+              <Text style={styles.dateModalTitle}>아직 상영 전인 날짜예요</Text>
+              <Text style={styles.dateModalHelp}>
+                그날의 캐스팅은 시간이 지나면 열릴 거예요.
+              </Text>
+
+              <TouchableOpacity
+                activeOpacity={0.85}
+                style={styles.futureDateButton}
+                onPress={() => setFutureDateModalVisible(false)}
+              >
+                <Text style={styles.dateApplyText}>확인했어요</Text>
+              </TouchableOpacity>
             </View>
           </View>
         </Modal>
@@ -947,7 +1014,8 @@ const styles = StyleSheet.create({
     marginTop: vs(24),
     width: Math.min(SCREEN_WIDTH - ms(28), ms(334)),
     height: vs(45),
-    paddingHorizontal: ms(11),
+    paddingLeft: ms(6),
+    paddingRight: ms(7),
     borderRadius: ms(24),
     borderWidth: 1,
     borderColor: "rgba(180, 75, 85, 0.65)",
@@ -955,14 +1023,29 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
   },
+  weekArrowButton: {
+    width: ms(34),
+    height: vs(34),
+    borderRadius: ms(17),
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  weekCalendarButton: {
+    width: ms(36),
+    height: vs(34),
+    borderRadius: ms(17),
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255, 178, 109, 0.08)",
+  },
   weekText: {
     flex: 1,
-    marginLeft: ms(8),
-    marginRight: ms(5),
+    marginHorizontal: ms(2),
     color: "#FFD0A0",
     fontFamily: "NanumSquareNeo",
-    fontSize: ms(11),
+    fontSize: ms(10),
     lineHeight: ms(21),
+    textAlign: "center",
   },
   dateModalOverlay: {
     flex: 1,
@@ -1039,6 +1122,17 @@ const styles = StyleSheet.create({
     flex: 1,
     height: vs(44),
     borderRadius: ms(12),
+    backgroundColor: "#FF9A5D",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  futureDateButton: {
+    alignSelf: "center",
+    marginTop: vs(4),
+    minWidth: ms(134),
+    height: vs(44),
+    paddingHorizontal: ms(22),
+    borderRadius: ms(22),
     backgroundColor: "#FF9A5D",
     alignItems: "center",
     justifyContent: "center",

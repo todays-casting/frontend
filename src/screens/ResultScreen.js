@@ -29,6 +29,7 @@ import {
   normalizeReturnTo,
 } from "../services/flowNavigation";
 import castingsApi from "../api/castings-api";
+import mypageApi from "../api/mypage-api";
 import recordsApi from "../api/records-api";
 import { notifyFavoriteChanged, subscribeFavoriteChanges } from "../services/favoriteState";
 import { AnalysisLoadingView } from "./AnalysisLoadingScreen";
@@ -385,6 +386,7 @@ export default function ResultScreen({ navigation, route }) {
   const [favoriteSaving, setFavoriteSaving] = useState(false);
   const [serverResult, setServerResult] = useState(null);
   const [statusRecordId, setStatusRecordId] = useState(null);
+  const [profileName, setProfileName] = useState("");
   const routeRecordDate = route?.params?.recordDate;
   const returnTo = useMemo(
     () => normalizeReturnTo(route?.params?.returnTo, "Home"),
@@ -401,6 +403,10 @@ export default function ResultScreen({ navigation, route }) {
       date: formatDisplayDate(resultDateKey),
     };
   }, [route?.params?.result, resultDateKey, serverResult, todayState.resultData]);
+  const displayUserName =
+    result.userName && result.userName !== EMPTY_RESULT.userName
+      ? result.userName
+      : profileName || EMPTY_RESULT.userName;
   const currentRecordId =
     route?.params?.recordId ??
     route?.params?.dailyRecordId ??
@@ -411,6 +417,29 @@ export default function ResultScreen({ navigation, route }) {
     todayState.resultData?.recordId ??
     statusRecordId;
   useEffect(() => subscribeTodayRecordState(setTodayState), []);
+
+  useEffect(() => {
+    let active = true;
+
+    mypageApi
+      .getMyPage()
+      .then((profile) => {
+        if (!active) {
+          return;
+        }
+
+        setProfileName(
+          pickFirst(profile?.nickname, profile?.name, profile?.userName) ?? ""
+        );
+      })
+      .catch((error) => {
+        console.warn("[ResultScreen] failed to load profile:", error);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
   useEffect(
     () =>
       subscribeFavoriteChanges(({ recordId, isFavorite }) => {
@@ -682,7 +711,7 @@ export default function ResultScreen({ navigation, route }) {
 
           <View style={styles.messageBlock}>
             <Text style={styles.messageTitle}>
-              ✦ {result.userName}님, 오늘의 기록이 완성되었어요
+              ✦ {displayUserName}님, 오늘의 기록이 완성되었어요
             </Text>
             <Text style={styles.messageSub}>당신만의 감성이 담긴 하루였어요.</Text>
           </View>

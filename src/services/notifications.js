@@ -1,6 +1,7 @@
 import { Platform } from "react-native";
 import * as Notifications from "expo-notifications";
 import notificationsApi from "../api/notifications-api";
+import { addNotification } from "./notificationState";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -16,10 +17,60 @@ const hasNotificationPermission = (permission) =>
   permission.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL;
 
 let pushTokenSubscription = null;
+let notificationReceivedSubscription = null;
+let notificationResponseSubscription = null;
+
+const formatNotificationTime = (date = new Date()) =>
+  `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+
+const toSheetNotification = (notification) => {
+  const content = notification?.request?.content;
+  const data = content?.data ?? {};
+  const dedupeKey =
+    data.dedupeKey ??
+    (data.recordId ? `casting-ready-${data.recordId}` : undefined);
+
+  return {
+    id: dedupeKey ?? notification?.request?.identifier ?? `${Date.now()}`,
+    dedupeKey,
+    title: content?.title ?? "새 알림",
+    body: content?.body ?? "",
+    time: formatNotificationTime(),
+    icon: data.icon ?? "movie-open-star-outline",
+    unread: true,
+    data: { ...data, dedupeKey },
+  };
+};
+
+export function startNotificationListeners() {
+  if (Platform.OS === "web") {
+    return;
+  }
+
+  if (!notificationReceivedSubscription) {
+    notificationReceivedSubscription = Notifications.addNotificationReceivedListener(
+      (notification) => {
+        addNotification(toSheetNotification(notification));
+      }
+    );
+  }
+
+  if (!notificationResponseSubscription) {
+    notificationResponseSubscription = Notifications.addNotificationResponseReceivedListener(
+      (response) => {
+        addNotification(toSheetNotification(response?.notification));
+      }
+    );
+  }
+}
 
 export function stopPushTokenSync() {
   pushTokenSubscription?.remove();
   pushTokenSubscription = null;
+  notificationReceivedSubscription?.remove();
+  notificationReceivedSubscription = null;
+  notificationResponseSubscription?.remove();
+  notificationResponseSubscription = null;
 }
 
 export function startPushTokenSync() {
@@ -76,6 +127,7 @@ export async function syncPushTokenWithServer() {
   }
 
   startPushTokenSync();
+  startNotificationListeners();
 
   return token;
 }

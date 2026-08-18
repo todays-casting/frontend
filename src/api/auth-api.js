@@ -133,6 +133,13 @@ const changePassword = async ({ currentPassword, newPassword, newPasswordConfirm
   stopPushTokenSync();
 };
 
+const deleteAccount = async () => {
+  await client.delete("/auth/me");
+  setAccessToken(null);
+  clearTodayRecordSession();
+  stopPushTokenSync();
+};
+
 const logout = () => {
   setAccessToken(null);
   clearTodayRecordSession();
@@ -147,6 +154,7 @@ const authApi = {
   requestPasswordReset,
   confirmPasswordReset,
   changePassword,
+  deleteAccount,
   logout,
 };
 

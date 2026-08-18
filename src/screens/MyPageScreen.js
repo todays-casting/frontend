@@ -63,10 +63,16 @@ const STATS = [
 
 const MENU = [
   {
-    icon: "settings-outline",
-    title: "\uC124\uC815",
-    subtitle: "\uAE30\uB85D \uC54C\uB9BC\uACFC \uC800\uC7A5 \uBC29\uC2DD\uC744 \uAD00\uB9AC\uD574\uC694",
+    icon: "notifications-outline",
+    title: "\uC54C\uB9BC\uC124\uC815",
+    subtitle: "\uAE30\uB85D \uC54C\uB9BC\uACFC \uD478\uC2DC \uBC29\uC2DD\uC744 \uAD00\uB9AC\uD574\uC694",
     route: "Settings",
+  },
+  {
+    icon: "person-circle-outline",
+    title: "\uACC4\uC815 \uC124\uC815",
+    subtitle: "\uBE44\uBC00\uBC88\uD638 \uBCC0\uACBD\uACFC \uD0C8\uD1F4\uB97C \uAD00\uB9AC\uD574\uC694",
+    route: "AccountSettings",
   },
   {
     icon: "help-circle-outline",

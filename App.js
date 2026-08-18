@@ -14,23 +14,35 @@ import BottomTabNavigator from "./src/navigation/BottomTabNavigator";
 import AnalysisLoadingScreen from "./src/screens/AnalysisLoadingScreen";
 import ResultScreen from "./src/screens/ResultScreen";
 import {
+  AccountSettingsScreen,
   ContactScreen,
   SettingsScreen,
 } from "./src/screens/MyPageDetailScreen";
 import { hydrateAccessToken } from "./src/api/client";
-import { registerForPushNotificationsAsync } from "./src/services/notifications";
+import {
+  startNotificationListeners,
+  syncPushTokenWithServer,
+} from "./src/services/notifications";
 
 const Stack = createNativeStackNavigator();
 
 export default function App() {
   useEffect(() => {
-    hydrateAccessToken().catch((error) => {
-      console.warn("Failed to hydrate access token:", error);
-    });
+    const initializeNotifications = async () => {
+      try {
+        const accessToken = await hydrateAccessToken();
 
-    registerForPushNotificationsAsync().catch((error) => {
-      console.warn("Failed to register push notifications:", error);
-    });
+        startNotificationListeners();
+
+        if (accessToken) {
+          await syncPushTokenWithServer();
+        }
+      } catch (error) {
+        console.warn("Failed to initialize push notifications:", error);
+      }
+    };
+
+    initializeNotifications();
   }, []);
 
   const [fontsLoaded] = useFonts({
@@ -60,6 +72,7 @@ export default function App() {
           <Stack.Screen name="AnalysisLoading" component={AnalysisLoadingScreen} />
           <Stack.Screen name="Result" component={ResultScreen} />
           <Stack.Screen name="Settings" component={SettingsScreen} />
+          <Stack.Screen name="AccountSettings" component={AccountSettingsScreen} />
           <Stack.Screen name="Contact" component={ContactScreen} />
         </Stack.Navigator>
       </NavigationContainer>
