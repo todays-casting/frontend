@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -13,7 +13,17 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import * as AuthSession from "expo-auth-session";
+import * as WebBrowser from "expo-web-browser";
 import authApi from "../api/auth-api";
+
+WebBrowser.maybeCompleteAuthSession();
+
+const KAKAO_REST_API_KEY = process.env.EXPO_PUBLIC_KAKAO_REST_API_KEY;
+const KAKAO_DISCOVERY = {
+  authorizationEndpoint: "https://kauth.kakao.com/oauth/authorize",
+  tokenEndpoint: "https://kauth.kakao.com/oauth/token",
+};
 
 const BASE_WIDTH = 393;
 const BASE_HEIGHT = 824;
@@ -41,7 +51,21 @@ export default function LoginScreen({ navigation }) {
   const [password, setPassword] = useState("");
   const [secure, setSecure] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [kakaoLoading, setKakaoLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const redirectUri = AuthSession.makeRedirectUri({
+    scheme: "todayscasting",
+    path: "oauth/kakao",
+  });
+  const [kakaoRequest, kakaoResponse, promptKakaoLogin] = AuthSession.useAuthRequest(
+    {
+      clientId: KAKAO_REST_API_KEY || "missing-kakao-rest-api-key",
+      redirectUri,
+      responseType: AuthSession.ResponseType.Code,
+      usePKCE: true,
+    },
+    KAKAO_DISCOVERY
+  );
   const styles = createStyles(width, height, insets);
   const scale = Math.min(width / BASE_WIDTH, height / BASE_HEIGHT) * UI_SCALE;
   const iconSize = (value) => value * scale;
@@ -58,6 +82,81 @@ export default function LoginScreen({ navigation }) {
       );
     } finally {
       setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!kakaoResponse) return;
+
+    if (kakaoResponse.type === "error") {
+      setKakaoLoading(false);
+      setErrorMessage(
+        kakaoResponse.error?.message ?? "카카오 로그인 인증에 실패했습니다."
+      );
+      return;
+    }
+
+    if (kakaoResponse.type !== "success") {
+      setKakaoLoading(false);
+      return;
+    }
+
+    const completeKakaoLogin = async () => {
+      try {
+        const tokenResponse = await AuthSession.exchangeCodeAsync(
+          {
+            clientId: KAKAO_REST_API_KEY,
+            code: kakaoResponse.params.code,
+            redirectUri,
+            extraParams: {
+              code_verifier: kakaoRequest.codeVerifier,
+            },
+          },
+          KAKAO_DISCOVERY
+        );
+        const result = await authApi.kakaoLogin({
+          accessToken: tokenResponse.accessToken,
+        });
+
+        if (result.isNewUser) {
+          if (!result.userId) {
+            throw new Error("신규 카카오 회원의 userId가 없습니다.");
+          }
+          navigation.navigate("SignUpStepTwo", { userId: result.userId });
+          return;
+        }
+
+        if (!result.accessToken) {
+          throw new Error("카카오 로그인 응답에 accessToken이 없습니다.");
+        }
+        navigation.replace("Main");
+      } catch (error) {
+        setErrorMessage(
+          error.response?.data?.message ??
+            error.message ??
+            "카카오 로그인에 실패했습니다. 다시 시도해주세요."
+        );
+      } finally {
+        setKakaoLoading(false);
+      }
+    };
+
+    completeKakaoLogin();
+  }, [kakaoResponse]);
+
+  const handleKakaoLogin = async () => {
+    if (!KAKAO_REST_API_KEY) {
+      setErrorMessage("카카오 REST API 키가 설정되지 않았습니다.");
+      return;
+    }
+
+    try {
+      setKakaoLoading(true);
+      setErrorMessage("");
+      await promptKakaoLogin();
+    } catch (error) {
+      setKakaoLoading(false);
+      setErrorMessage(error.message ?? "카카오 로그인 창을 열지 못했습니다.");
     }
   };
 
@@ -172,6 +271,8 @@ export default function LoginScreen({ navigation }) {
             <TouchableOpacity
               activeOpacity={0.85}
               style={styles.kakaoButton}
+              onPress={handleKakaoLogin}
+              disabled={!kakaoRequest || kakaoLoading}
               accessibilityRole="button"
               accessibilityLabel={COPY.kakaoLogin}
             >
@@ -180,6 +281,11 @@ export default function LoginScreen({ navigation }) {
                 style={styles.kakaoLoginImage}
                 resizeMode="contain"
               />
+              {kakaoLoading ? (
+                <View style={styles.kakaoLoadingOverlay}>
+                  <Text style={styles.kakaoLoadingText}>카카오 로그인 중...</Text>
+                </View>
+              ) : null}
             </TouchableOpacity>
 
             <View style={styles.bottomLinks}>
@@ -375,6 +481,20 @@ const createStyles = (screenWidth, screenHeight, insets) => {
   kakaoLoginImage: {
     width: "100%",
     height: "100%",
+  },
+
+  kakaoLoadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: ms(13),
+    backgroundColor: "rgba(254, 229, 0, 0.92)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  kakaoLoadingText: {
+    color: "#191919",
+    fontFamily: "NanumSquareNeo",
+    fontSize: fs(15),
   },
 
   bottomLinks: {

@@ -267,7 +267,7 @@ export function SignUpStepTwoScreen({ navigation, route }) {
 export function FindPasswordScreen({ navigation }) {
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
-  const [temporaryPassword, setTemporaryPassword] = useState("");
+  const [otp, setOtp] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [passwordConfirm, setPasswordConfirm] = useState("");
   const [completed, setCompleted] = useState(false);
@@ -275,19 +275,19 @@ export function FindPasswordScreen({ navigation }) {
   const [errorMessage, setErrorMessage] = useState("");
   const canSend = email.includes("@");
   const canChange =
-    temporaryPassword.length > 0 &&
+    otp.trim().length > 0 &&
     newPassword.length >= 8 &&
     newPassword === passwordConfirm;
 
-  const handleSendTemporaryPassword = async () => {
+  const handleSendOtp = async () => {
     try {
       setLoading(true);
       setErrorMessage("");
-      await authApi.resetPassword({ email: email.trim() });
+      await authApi.requestPasswordReset({ email: email.trim() });
       setSent(true);
     } catch (error) {
       setErrorMessage(
-        error.response?.data?.message ?? "임시비밀번호 발송에 실패했습니다."
+        error.response?.data?.message ?? "인증코드 발송에 실패했습니다."
       );
     } finally {
       setLoading(false);
@@ -298,14 +298,10 @@ export function FindPasswordScreen({ navigation }) {
     try {
       setLoading(true);
       setErrorMessage("");
-      await authApi.login({
+      await authApi.confirmPasswordReset({
         email: email.trim(),
-        password: temporaryPassword,
-      });
-      await authApi.changePassword({
-        currentPassword: temporaryPassword,
+        otp: otp.trim(),
         newPassword,
-        newPasswordConfirm: passwordConfirm,
       });
       setCompleted(true);
     } catch (error) {
@@ -323,8 +319,8 @@ export function FindPasswordScreen({ navigation }) {
       title="비밀번호 찾기"
       description={
         sent
-          ? "메일로 받은 임시비밀번호와 새 비밀번호를 입력해주세요."
-          : "가입한 이메일로 임시비밀번호를 보내드려요."
+          ? "메일로 받은 인증코드와 새 비밀번호를 입력해주세요."
+          : "가입한 이메일로 인증코드를 보내드려요."
       }
     >
       {(styles) => (
@@ -342,23 +338,22 @@ export function FindPasswordScreen({ navigation }) {
               />
               <PrimaryButton
                 styles={styles}
-                label={loading ? "발송 중..." : "임시비밀번호 받기"}
+                label={loading ? "발송 중..." : "인증코드 받기"}
                 disabled={!canSend || loading}
-                onPress={handleSendTemporaryPassword}
+                onPress={handleSendOtp}
               />
               {errorMessage ? <Text selectable style={styles.errorText}>{errorMessage}</Text> : null}
             </>
           ) : (
             <>
-              <Text selectable style={styles.successText}>{email}로 임시비밀번호를 전송했습니다.</Text>
+              <Text selectable style={styles.successText}>{email}로 인증코드를 전송했습니다.</Text>
               <Field
                 styles={styles}
-                label="임시비밀번호"
+                label="인증코드"
                 icon="key-outline"
-                value={temporaryPassword}
-                onChangeText={setTemporaryPassword}
-                placeholder="메일로 받은 임시비밀번호"
-                secureTextEntry
+                value={otp}
+                onChangeText={setOtp}
+                placeholder="메일로 받은 인증코드"
               />
               <Field
                 styles={styles}

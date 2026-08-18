@@ -17,6 +17,7 @@ import {
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { Image as ExpoImage } from "expo-image";
 import Svg, {
   ClipPath,
   Defs,
@@ -102,6 +103,7 @@ export default function CalendarScreen({ navigation }) {
   const [calendarError, setCalendarError] = useState("");
   const [recordError, setRecordError] = useState("");
   const [recordLoading, setRecordLoading] = useState(false);
+  const [favoriteLoading, setFavoriteLoading] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState(null);
   const [selectedCasting, setSelectedCasting] = useState(null);
   const [favoriteDates, setFavoriteDates] = useState(() => new Set());
@@ -154,6 +156,7 @@ export default function CalendarScreen({ navigation }) {
         role: selectedCasting.roleName,
         scene: selectedCasting.scenePhrase,
         line: selectedCasting.oneLineComment,
+        imageUrl: selectedCasting.imageUrl,
       }
     : RECORD;
 
@@ -339,22 +342,43 @@ export default function CalendarScreen({ navigation }) {
     navigation?.navigate?.("Input");
   };
 
-  const toggleFavorite = () => {
-    if (selectedDateKey === null) {
+  const toggleFavorite = async () => {
+    const recordId = selectedRecord?.id ?? selectedCasting?.dailyRecordId;
+
+    if (selectedDateKey === null || !recordId || favoriteLoading) {
       return;
     }
 
-    setFavoriteDates((current) => {
-      const next = new Set(current);
+    try {
+      setFavoriteLoading(true);
+      setRecordError("");
+      const updatedCasting = await castingsApi.toggleFavorite(recordId);
 
-      if (next.has(selectedDateKey)) {
-        next.delete(selectedDateKey);
-      } else {
-        next.add(selectedDateKey);
+      if (typeof updatedCasting?.isFavorite !== "boolean") {
+        throw new Error("즐겨찾기 응답을 확인할 수 없습니다.");
       }
 
-      return next;
-    });
+      setSelectedCasting(updatedCasting);
+      setFavoriteDates((current) => {
+        const next = new Set(current);
+
+        if (updatedCasting.isFavorite) {
+          next.add(selectedDateKey);
+        } else {
+          next.delete(selectedDateKey);
+        }
+
+        return next;
+      });
+    } catch (error) {
+      setRecordError(
+        error.response?.data?.message ??
+          error.message ??
+          "즐겨찾기 변경에 실패했습니다."
+      );
+    } finally {
+      setFavoriteLoading(false);
+    }
   };
 
   return (
@@ -695,6 +719,37 @@ export function CastingCardFront({
   eyebrow = "TODAY’S CASTING",
   rows,
 }) {
+  const [remoteImageReady, setRemoteImageReady] = useState(false);
+  const imageUrl =
+    typeof record.imageUrl === "string" ? record.imageUrl.trim() : "";
+
+  useEffect(() => {
+    let active = true;
+    setRemoteImageReady(false);
+
+    if (!imageUrl) {
+      return () => {
+        active = false;
+      };
+    }
+
+    ExpoImage.prefetch(imageUrl, "memory-disk")
+      .then((loaded) => {
+        if (active) {
+          setRemoteImageReady(loaded);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setRemoteImageReady(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [imageUrl]);
+
   const infoRows = rows ?? [
     { icon: "movie-open-outline", label: "오늘의 장르", text: record.genre },
     { icon: "account-outline", label: "오늘의 배역", text: record.role },
@@ -718,13 +773,14 @@ export function CastingCardFront({
           </ClipPath>
         </Defs>
         <SvgImage
-          href={CASTING_CARD_BACKGROUND}
+          href={remoteImageReady ? { uri: imageUrl } : CASTING_CARD_BACKGROUND}
           x="0"
           y="0"
           width="404"
           height="584"
           preserveAspectRatio="xMidYMid slice"
           clipPath="url(#castingCardClip)"
+          onError={() => setRemoteImageReady(false)}
         />
         <Rect
           x="0"
