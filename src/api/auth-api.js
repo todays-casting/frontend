@@ -57,15 +57,26 @@ const kakaoLogin = async ({ accessToken }) => {
     publicRequestConfig
   );
 
-  setAccessToken(response.data.accessToken);
-  syncNotificationsAfterAuth();
+  if (!response.data.isNewUser && response.data.accessToken) {
+    setAccessToken(response.data.accessToken);
+    syncNotificationsAfterAuth();
+  }
+
   return response.data;
 };
 
-const resetPassword = async ({ email }) => {
+const requestPasswordReset = async ({ email }) => {
   await client.post(
-    "/auth/password/reset",
+    "/auth/password/reset/request",
     { email },
+    publicRequestConfig
+  );
+};
+
+const confirmPasswordReset = async ({ email, otp, newPassword }) => {
+  await client.post(
+    "/auth/password/reset/confirm",
+    { email, otp, newPassword },
     publicRequestConfig
   );
 };
@@ -90,7 +101,8 @@ const authApi = {
   signUpStepTwo,
   login,
   kakaoLogin,
-  resetPassword,
+  requestPasswordReset,
+  confirmPasswordReset,
   changePassword,
   logout,
 };

@@ -1,13 +1,15 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
   Dimensions,
   Image,
   ImageBackground,
+  Modal,
   ScrollView,
   StatusBar,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -15,6 +17,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import NotificationSheet from "../components/NotificationSheet";
 import { CastingCardBack, CastingCardFront } from "./CalendarScreen";
+import calendarApi from "../api/calendar-api";
+import castingsApi from "../api/castings-api";
+import recordsApi from "../api/records-api";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const scale = Math.min(Math.max(SCREEN_WIDTH / 393, 0.82), 1.15);
@@ -25,6 +30,58 @@ const CARD_WIDTH = ms(250);
 const CARD_GAP = -ms(104);
 const SNAP = CARD_WIDTH + CARD_GAP;
 const SIDE_PADDING = Math.max((SCREEN_WIDTH - CARD_WIDTH) / 2, ms(32));
+
+const toDateKey = (date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
+    date.getDate()
+  ).padStart(2, "0")}`;
+
+const formatCardDate = (dateKey) => dateKey.replaceAll("-", ".");
+
+const formatDateRange = (start, end) => {
+  const startMonth = String(start.getMonth() + 1).padStart(2, "0");
+  const endMonth = String(end.getMonth() + 1).padStart(2, "0");
+  const startDay = String(start.getDate()).padStart(2, "0");
+  const endDay = String(end.getDate()).padStart(2, "0");
+
+  return `${start.getFullYear()}년 ${startMonth}월 ${startDay}일 ~ ${end.getFullYear()}년 ${endMonth}월 ${endDay}일`;
+};
+
+const getCurrentWeek = () => {
+  const today = new Date();
+  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate() - today.getDay());
+  const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6);
+  return { start, end };
+};
+
+const toYearMonth = (date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+
+const parseDateInput = (value) => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (!match) return null;
+
+  const [, year, month, day] = match.map(Number);
+  const date = new Date(year, month - 1, day);
+  return date.getFullYear() === year &&
+    date.getMonth() === month - 1 &&
+    date.getDate() === day
+    ? date
+    : null;
+};
+
+const getYearMonthsInRange = (start, end) => {
+  const months = [];
+  const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+  const last = new Date(end.getFullYear(), end.getMonth(), 1);
+
+  while (cursor <= last) {
+    months.push(toYearMonth(cursor));
+    cursor.setMonth(cursor.getMonth() + 1);
+  }
+
+  return months;
+};
 
 const HISTORY_RECORDS = [
   {
@@ -102,19 +159,122 @@ const HISTORY_RECORDS = [
 const DIARY_TEXT =
   "새벽 일찍 눈이 떠졌다.\n창문을 열자 상쾌한 공기가 얼굴을 스쳤다.\n따뜻한 차 한 잔을 내려 천천히 마시며\n오늘 하루를 어떻게 보내고 싶은지 생각해봤다.\n\n오후엔 도서관에 다녀왔다.\n조용한 공간에서 책을 읽으니\n복잡했던 마음이 차분해졌다.\n새로운 문장을 만나면 마음이 환해지는 기분이었다.\n\n저녁엔 오랜만에 친구와 통화를 했다.\n서로의 이야기를 듣고 나니\n다시 힘을 낼 수 있을 것 같았다.\n\n큰 성과는 없었지만,\n작은 순간들이 모여 의미 있는 하루가 된 것 같다.\n\n오늘도 잘 해냈어, 나 자신.\n내일은 더 멋진 하루가 되길. ✦";
 
-export default function HistoryScreen() {
+export default function HistoryScreen({ navigation }) {
+  const initialWeek = useMemo(getCurrentWeek, []);
+  const [week, setWeek] = useState(initialWeek);
+  const [datePickerVisible, setDatePickerVisible] = useState(false);
+  const [startDateInput, setStartDateInput] = useState(() => toDateKey(initialWeek.start));
+  const [endDateInput, setEndDateInput] = useState(() => toDateKey(initialWeek.end));
+  const [dateInputError, setDateInputError] = useState("");
+  const [historyRecords, setHistoryRecords] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyError, setHistoryError] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
   const [backVisible, setBackVisible] = useState(false);
   const [notificationVisible, setNotificationVisible] = useState(false);
-  const [favoriteDates, setFavoriteDates] = useState(
-    () => new Set(HISTORY_RECORDS.filter((record) => record.liked).map((record) => record.date))
-  );
+  const [favoriteDates, setFavoriteDates] = useState(() => new Set());
+  const [favoriteLoadingRecordId, setFavoriteLoadingRecordId] = useState(null);
   const scrollRef = useRef(null);
   const scrollEndTimerRef = useRef(null);
   const lastScrollOffsetRef = useRef(0);
   const isDraggingRef = useRef(false);
   const scrollX = useRef(new Animated.Value(activeIndex * SNAP)).current;
   const flip = useRef(new Animated.Value(0)).current;
+
+  const weekLabel = historyLoading
+    ? "히스토리를 불러오는 중..."
+    : historyError
+      ? historyError
+      : formatDateRange(week.start, week.end);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadHistory = async () => {
+      try {
+        setHistoryLoading(true);
+        setHistoryError("");
+        const yearMonths = getYearMonthsInRange(week.start, week.end);
+        const markerGroups = await Promise.all(
+          yearMonths.map((yearMonth) => calendarApi.getMonthlyMarkers(yearMonth))
+        );
+        const startKey = toDateKey(week.start);
+        const endKey = toDateKey(week.end);
+        const recordDates = [...new Set(
+          markerGroups
+            .flat()
+            .filter(
+              (marker) =>
+                marker.hasRecord &&
+                marker.recordDate >= startKey &&
+                marker.recordDate <= endKey
+            )
+            .map((marker) => marker.recordDate)
+        )].sort();
+        const results = await Promise.allSettled(
+          recordDates.map(async (recordDate) => {
+            const dailyRecord = await recordsApi.getRecordByDate(recordDate);
+
+            if (!dailyRecord?.id || dailyRecord.status !== "COMPLETED") {
+              return null;
+            }
+
+            const casting = await castingsApi.getCastingByRecordId(dailyRecord.id);
+            const date = new Date(`${recordDate}T00:00:00`);
+
+            return {
+              recordId: dailyRecord.id,
+              date: formatCardDate(recordDate),
+              dateKey: recordDate,
+              day: ["일", "월", "화", "수", "목", "금", "토"][date.getDay()],
+              title: casting.highlight || casting.characterPhrase,
+              genre: casting.genre,
+              emotion: casting.additionalMood?.join(" · ") || "",
+              line: casting.oneLineComment,
+              scene: casting.scenePhrase,
+              diary: dailyRecord.content,
+              imageUrl: casting.imageUrl,
+              liked: casting.isFavorite,
+            };
+          })
+        );
+        const loadedRecords = results
+          .filter((result) => result.status === "fulfilled" && result.value)
+          .map((result) => result.value);
+
+        if (!active) return;
+
+        setHistoryRecords(loadedRecords);
+        setFavoriteDates(
+          new Set(
+            loadedRecords.filter((record) => record.liked).map((record) => record.dateKey)
+          )
+        );
+        setActiveIndex(0);
+        resetCardSide();
+        scrollX.setValue(0);
+        scrollRef.current?.scrollTo({ x: 0, animated: false });
+      } catch (error) {
+        if (!active) return;
+        setHistoryRecords([]);
+        setFavoriteDates(new Set());
+        setHistoryError(
+          error.response?.data?.message ?? "히스토리를 불러오지 못했습니다."
+        );
+      } finally {
+        if (active) setHistoryLoading(false);
+      }
+    };
+
+    loadHistory();
+    const unsubscribeFocus = navigation?.addListener?.("focus", loadHistory);
+
+    return () => {
+      active = false;
+      clearTimeout(scrollEndTimerRef.current);
+      unsubscribeFocus?.();
+    };
+  }, [navigation, week]);
 
   const frontRotate = flip.interpolate({
     inputRange: [0, 1],
@@ -151,22 +311,72 @@ export default function HistoryScreen() {
     flip.setValue(0);
   };
 
-  const toggleFavorite = (date) => {
-    setFavoriteDates((current) => {
-      const next = new Set(current);
+  const openDatePicker = () => {
+    setStartDateInput(toDateKey(week.start));
+    setEndDateInput(toDateKey(week.end));
+    setDateInputError("");
+    setDatePickerVisible(true);
+  };
 
-      if (next.has(date)) {
-        next.delete(date);
-      } else {
-        next.add(date);
+  const applyDateRange = () => {
+    const start = parseDateInput(startDateInput);
+    const end = parseDateInput(endDateInput);
+
+    if (!start || !end) {
+      setDateInputError("날짜를 YYYY-MM-DD 형식으로 입력해주세요.");
+      return;
+    }
+
+    if (start > end) {
+      setDateInputError("시작일은 종료일보다 늦을 수 없어요.");
+      return;
+    }
+
+    const rangeDays = Math.floor((end - start) / 86400000) + 1;
+    if (rangeDays > 31) {
+      setDateInputError("조회 기간은 최대 31일까지 선택할 수 있어요.");
+      return;
+    }
+
+    setWeek({ start, end });
+    setDatePickerVisible(false);
+  };
+
+  const toggleFavorite = async (record) => {
+    if (!record?.recordId || favoriteLoadingRecordId !== null) return;
+
+    try {
+      setFavoriteLoadingRecordId(record.recordId);
+      const updatedCasting = await castingsApi.toggleFavorite(record.recordId);
+
+      if (typeof updatedCasting?.isFavorite !== "boolean") {
+        throw new Error("즐겨찾기 응답을 확인할 수 없습니다.");
       }
 
-      return next;
-    });
+      setHistoryRecords((current) =>
+        current.map((item) =>
+          item.recordId === record.recordId
+            ? { ...item, liked: updatedCasting.isFavorite }
+            : item
+        )
+      );
+      setFavoriteDates((current) => {
+        const next = new Set(current);
+        if (updatedCasting.isFavorite) next.add(record.dateKey);
+        else next.delete(record.dateKey);
+        return next;
+      });
+    } catch (error) {
+      setHistoryError(
+        error.response?.data?.message ?? error.message ?? "즐겨찾기 변경에 실패했습니다."
+      );
+    } finally {
+      setFavoriteLoadingRecordId(null);
+    }
   };
 
   const scrollToIndex = (index) => {
-    const nextIndex = Math.max(0, Math.min(index, HISTORY_RECORDS.length - 1));
+    const nextIndex = Math.max(0, Math.min(index, historyRecords.length - 1));
 
     setActiveIndex(nextIndex);
     resetCardSide();
@@ -179,7 +389,7 @@ export default function HistoryScreen() {
   const snapToNearestCard = (offsetX) => {
     const nextIndex = Math.max(
       0,
-      Math.min(Math.round(offsetX / SNAP), HISTORY_RECORDS.length - 1)
+      Math.min(Math.round(offsetX / SNAP), historyRecords.length - 1)
     );
     const snappedOffset = nextIndex * SNAP;
 
@@ -258,17 +468,23 @@ export default function HistoryScreen() {
             </TouchableOpacity>
           </View>
 
-          <TouchableOpacity activeOpacity={0.8} style={styles.weekPicker}>
-            <Ionicons name="calendar-outline" size={ms(22)} color="#FFB26D" />
+          <TouchableOpacity
+            activeOpacity={0.8}
+            style={styles.weekPicker}
+            onPress={openDatePicker}
+            accessibilityRole="button"
+            accessibilityLabel="히스토리 조회 기간 선택"
+          >
+            <Ionicons name="calendar-outline" size={ms(20)} color="#FFB26D" />
             <Text
               style={styles.weekText}
               numberOfLines={1}
               adjustsFontSizeToFit
-              minimumFontScale={0.82}
+              minimumFontScale={0.65}
             >
-              2025년 05월 18일 ~ 2025년 05월 24일
+              {weekLabel}
             </Text>
-            <Ionicons name="chevron-down" size={ms(22)} color="#CE737D" />
+            <Ionicons name="chevron-down" size={ms(20)} color="#CE737D" />
           </TouchableOpacity>
 
           <View style={styles.carouselWrap}>
@@ -276,7 +492,7 @@ export default function HistoryScreen() {
               ref={scrollRef}
               horizontal
               showsHorizontalScrollIndicator={false}
-              snapToOffsets={HISTORY_RECORDS.map((_, index) => index * SNAP)}
+              snapToOffsets={historyRecords.map((_, index) => index * SNAP)}
               snapToAlignment="start"
               disableIntervalMomentum
               decelerationRate="fast"
@@ -301,7 +517,7 @@ export default function HistoryScreen() {
               )}
               scrollEventThrottle={16}
             >
-              {HISTORY_RECORDS.map((record, index) => {
+              {historyRecords.map((record, index) => {
                 const inputRange = [
                   (index - 1) * SNAP,
                   index * SNAP,
@@ -335,7 +551,7 @@ export default function HistoryScreen() {
 
                 return (
                   <Animated.View
-                    key={record.date}
+                    key={record.dateKey}
                     style={[
                       styles.cardSlot,
                       {
@@ -355,11 +571,11 @@ export default function HistoryScreen() {
                     {index === activeIndex ? (
                       <HistoryFlipCard
                         record={record}
-                        isFavorite={favoriteDates.has(record.date)}
+                        isFavorite={favoriteDates.has(record.dateKey)}
                         backVisible={backVisible}
                         frontRotate={frontRotate}
                         backRotate={backRotate}
-                        onToggleFavorite={() => toggleFavorite(record.date)}
+                        onToggleFavorite={() => toggleFavorite(record)}
                         onShowBack={showBack}
                         onShowFront={showFront}
                       />
@@ -367,8 +583,8 @@ export default function HistoryScreen() {
                       <HistoryCardFront
                         record={record}
                         focused={index === activeIndex}
-                        isFavorite={favoriteDates.has(record.date)}
-                        onToggleFavorite={() => toggleFavorite(record.date)}
+                        isFavorite={favoriteDates.has(record.dateKey)}
+                        onToggleFavorite={() => toggleFavorite(record)}
                         onShowBack={() => scrollToIndex(index)}
                       />
                     )}
@@ -390,9 +606,9 @@ export default function HistoryScreen() {
           </View>
 
           <View style={styles.pagination}>
-            {HISTORY_RECORDS.map((record, index) => (
+            {historyRecords.map((record, index) => (
               <View
-                key={`${record.date}-dot`}
+                key={`${record.dateKey}-dot`}
                 style={[styles.dot, activeIndex === index && styles.activeDot]}
               />
             ))}
@@ -402,6 +618,68 @@ export default function HistoryScreen() {
           visible={notificationVisible}
           onClose={() => setNotificationVisible(false)}
         />
+        <Modal
+          visible={datePickerVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setDatePickerVisible(false)}
+        >
+          <View style={styles.dateModalOverlay}>
+            <View style={styles.dateModalCard}>
+              <Text style={styles.dateModalTitle}>조회 기간 입력</Text>
+              <Text style={styles.dateModalHelp}>YYYY-MM-DD 형식으로 입력해주세요.</Text>
+
+              <View style={styles.dateFieldGroup}>
+                <Text style={styles.dateFieldLabel}>시작일</Text>
+                <TextInput
+                  value={startDateInput}
+                  onChangeText={setStartDateInput}
+                  placeholder="2026-08-01"
+                  placeholderTextColor="rgba(255, 208, 160, 0.4)"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  maxLength={10}
+                  style={styles.dateInput}
+                />
+              </View>
+
+              <View style={styles.dateFieldGroup}>
+                <Text style={styles.dateFieldLabel}>종료일</Text>
+                <TextInput
+                  value={endDateInput}
+                  onChangeText={setEndDateInput}
+                  placeholder="2026-08-31"
+                  placeholderTextColor="rgba(255, 208, 160, 0.4)"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  maxLength={10}
+                  style={styles.dateInput}
+                />
+              </View>
+
+              {dateInputError ? (
+                <Text selectable style={styles.dateInputError}>{dateInputError}</Text>
+              ) : null}
+
+              <View style={styles.dateModalActions}>
+                <TouchableOpacity
+                  activeOpacity={0.75}
+                  style={styles.dateCancelButton}
+                  onPress={() => setDatePickerVisible(false)}
+                >
+                  <Text style={styles.dateCancelText}>취소</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  style={styles.dateApplyButton}
+                  onPress={applyDateRange}
+                >
+                  <Text style={styles.dateApplyText}>조회하기</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
       </SafeAreaView>
     </ImageBackground>
   );
@@ -486,7 +764,7 @@ function HistoryCardBack({ record, onShowFront }) {
     <View style={styles.sharedCastingCard}>
       <CastingCardBack
         date={record.date}
-        diary={record.diary ?? DIARY_TEXT}
+        diary={record.diary ?? ""}
         onFlip={onShowFront}
       />
     </View>
@@ -562,9 +840,9 @@ const styles = StyleSheet.create({
   weekPicker: {
     alignSelf: "center",
     marginTop: vs(24),
-    width: ms(324),
+    width: Math.min(SCREEN_WIDTH - ms(28), ms(334)),
     height: vs(45),
-    paddingHorizontal: ms(15),
+    paddingHorizontal: ms(11),
     borderRadius: ms(24),
     borderWidth: 1,
     borderColor: "rgba(180, 75, 85, 0.65)",
@@ -574,12 +852,101 @@ const styles = StyleSheet.create({
   },
   weekText: {
     flex: 1,
-    marginLeft: ms(12),
-    marginRight: ms(8),
+    marginLeft: ms(8),
+    marginRight: ms(5),
     color: "#FFD0A0",
     fontFamily: "NanumSquareNeo",
-    fontSize: ms(13),
+    fontSize: ms(11),
     lineHeight: ms(21),
+  },
+  dateModalOverlay: {
+    flex: 1,
+    paddingHorizontal: ms(28),
+    backgroundColor: "rgba(5, 8, 25, 0.78)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  dateModalCard: {
+    width: "100%",
+    maxWidth: ms(340),
+    padding: ms(22),
+    borderRadius: ms(22),
+    borderWidth: 1,
+    borderColor: "rgba(255, 167, 111, 0.55)",
+    backgroundColor: "#211637",
+    gap: vs(12),
+  },
+  dateModalTitle: {
+    color: "#FFD0A0",
+    fontFamily: "MaruBuriSemiBold",
+    fontSize: ms(21),
+    lineHeight: ms(29),
+    textAlign: "center",
+  },
+  dateModalHelp: {
+    color: "rgba(255, 229, 202, 0.66)",
+    fontFamily: "NanumSquareNeo",
+    fontSize: ms(12),
+    lineHeight: ms(18),
+    textAlign: "center",
+  },
+  dateFieldGroup: {
+    gap: vs(6),
+  },
+  dateFieldLabel: {
+    color: "#FFB26D",
+    fontFamily: "NanumSquareNeo",
+    fontSize: ms(12),
+  },
+  dateInput: {
+    height: vs(46),
+    paddingHorizontal: ms(14),
+    borderRadius: ms(12),
+    borderWidth: 1,
+    borderColor: "rgba(206, 115, 125, 0.6)",
+    backgroundColor: "rgba(12, 14, 34, 0.82)",
+    color: "#FFE4BE",
+    fontFamily: "NanumSquareNeo",
+    fontSize: ms(15),
+    fontVariant: ["tabular-nums"],
+  },
+  dateInputError: {
+    color: "#FFAAA7",
+    fontFamily: "NanumSquareNeo",
+    fontSize: ms(12),
+    lineHeight: ms(18),
+  },
+  dateModalActions: {
+    paddingTop: vs(4),
+    flexDirection: "row",
+    gap: ms(9),
+  },
+  dateCancelButton: {
+    flex: 1,
+    height: vs(44),
+    borderRadius: ms(12),
+    borderWidth: 1,
+    borderColor: "rgba(255, 208, 160, 0.35)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  dateApplyButton: {
+    flex: 1,
+    height: vs(44),
+    borderRadius: ms(12),
+    backgroundColor: "#FF9A5D",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  dateCancelText: {
+    color: "rgba(255, 228, 190, 0.76)",
+    fontFamily: "NanumSquareNeo",
+    fontSize: ms(14),
+  },
+  dateApplyText: {
+    color: "#211637",
+    fontFamily: "NanumSquareNeo",
+    fontSize: ms(14),
   },
   carouselWrap: {
     marginTop: vs(22),
