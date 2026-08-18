@@ -11,6 +11,7 @@ import DailyRecordScreen from "../screens/DailyRecordScreen";
 import MyPageScreen from "../screens/MyPageScreen";
 import ResultScreen from "../screens/ResultScreen";
 import {
+  getTodayDateKey,
   getTodayRecordState,
   setTodayResultReady,
   subscribeTodayRecordState,
@@ -20,15 +21,8 @@ import {
   subscribeNavigationUiState,
 } from "../services/navigationUiState";
 import { UserProvider } from "../contexts/UserContext";
-import recordsApi from "../api/records-api";
-import castingsApi from "../api/castings-api";
-
-const getStatusRecordId = (status) =>
-  status?.dailyRecordId ??
-  status?.recordId ??
-  status?.record?.id ??
-  status?.dailyRecord?.id ??
-  status?.id;
+import { findNavigationWithRoute } from "../services/flowNavigation";
+import { resolveTodayCastingTarget } from "../services/todayCastingResolver";
 
 const Tab = createBottomTabNavigator();
 
@@ -112,6 +106,16 @@ function CustomTabBar({ state, descriptors, navigation }) {
           const { options } = descriptors[route.key];
 
           const onPress = async () => {
+            const activeRoute = state.routes[state.index];
+            const returnTo =
+              route.name === "DailyRecord"
+                ? {
+                    screen:
+                      activeRoute?.name && activeRoute.name !== "DailyRecord"
+                        ? activeRoute.name
+                        : "Home",
+                  }
+                : undefined;
             const event = navigation.emit({
               type: "tabPress",
               target: route.key,
@@ -122,46 +126,58 @@ function CustomTabBar({ state, descriptors, navigation }) {
               return;
             }
 
-            if (route.name === "DailyRecord" && todayState.resultReady) {
+            if (route.name === "DailyRecord") {
               try {
-                const status = await recordsApi.getTodayStatus();
-                const recordId = getStatusRecordId(status);
+                const target = await resolveTodayCastingTarget();
+                const recordId = target.recordId;
+                const recordDate = target.recordDate ?? getTodayDateKey();
 
-                if (status?.screen === "RESULT") {
-                  const casting = recordId
-                    ? await castingsApi.getCastingByRecordId(recordId)
-                    : null;
-
-                  if (casting) {
-                    setTodayResultReady(true, {
-                      ...casting,
-                      recordId,
-                    });
-                  }
+                if (target.screen === "RESULT" && target.casting) {
+                  setTodayResultReady(true, {
+                    ...target.casting,
+                    recordId,
+                    recordDate,
+                  });
 
                   navigation.navigate("Result", {
                     recordId,
-                    result: casting
-                      ? {
-                          ...casting,
-                          recordId,
-                        }
-                      : undefined,
+                    recordDate,
+                    returnTo,
+                    result: {
+                      ...target.casting,
+                      recordId,
+                      recordDate,
+                    },
                   });
                   return;
                 }
 
-                if (status?.screen === "WAITING") {
-                  navigation.getParent?.()?.navigate("AnalysisLoading", {
+                if (["WAITING", "RESULT"].includes(target.screen) && recordId) {
+                  const rootNavigation = findNavigationWithRoute(
+                    navigation,
+                    "AnalysisLoading"
+                  );
+                  const loadingParams = {
                     recordId,
-                  });
+                    recordDate,
+                    returnTo,
+                  };
+
+                  if (rootNavigation) {
+                    rootNavigation.navigate("AnalysisLoading", loadingParams);
+                  } else {
+                    navigation.navigate("AnalysisLoading", loadingParams);
+                  }
                   return;
                 }
               } catch (error) {
                 console.warn("Failed to check today status:", error);
               }
 
-              navigation.navigate("Result");
+              navigation.navigate("DailyRecord", {
+                recordDate: getTodayDateKey(),
+                returnTo,
+              });
               return;
             }
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   ImageBackground,
   StatusBar,
@@ -10,11 +10,15 @@ import {
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { setTodayResultReady } from "../services/todayRecordState";
+import { getTodayDateKey, setTodayResultReady } from "../services/todayRecordState";
 import {
   clearAnalysisLoadingVisible,
   setAnalysisLoadingVisible,
 } from "../services/navigationUiState";
+import {
+  navigateToReturnTarget,
+  normalizeReturnTo,
+} from "../services/flowNavigation";
 import analysesApi from "../api/analyses-api";
 import castingsApi from "../api/castings-api";
 import recordsApi from "../api/records-api";
@@ -106,6 +110,22 @@ const hasDisplayResult = (value) =>
   typeof value === "object" &&
   typeof value.title === "string" &&
   value.title.trim().length > 0;
+
+const isPlaceholderImageUrl = (value) =>
+  typeof value === "string" &&
+  /\/default-[^/?#]+\.png(?:[?#].*)?$/i.test(value);
+
+const hasGeneratedCastingImage = (value) =>
+  Boolean(
+    value &&
+      typeof value.imageUrl === "string" &&
+      value.imageUrl.trim().length > 0 &&
+      !isPlaceholderImageUrl(value.imageUrl) &&
+      (value.hasGeneratedImageUrl || value.imageKey)
+  );
+
+const hasCompleteCastingResult = (value) =>
+  hasDisplayResult(value) && hasGeneratedCastingImage(value);
 
 const getRecordIdForLoading = async (routeRecordId) => {
   if (routeRecordId) {
@@ -216,8 +236,19 @@ const normalizeCastingResult = (casting, recordId) => {
   };
 };
 
-const navigateResult = (navigation, recordId, result = null) => {
-  const params = result ? { result, recordId } : { recordId };
+const navigateResult = (
+  navigation,
+  recordId,
+  result = null,
+  recordDate = null,
+  returnTo = null
+) => {
+  const params = {
+    ...(result ? { result } : {}),
+    ...(recordId ? { recordId } : {}),
+    ...(recordDate ? { recordDate } : {}),
+    ...(returnTo ? { returnTo } : {}),
+  };
   const mainNavigation = findNavigationWithRoute(navigation, "Main");
 
   clearAnalysisLoadingVisible();
@@ -243,7 +274,7 @@ const navigateResult = (navigation, recordId, result = null) => {
     return;
   }
 
-  navigation.goBack();
+  navigateToReturnTarget(navigation, returnTo, "Home");
 };
 
 export function AnalysisLoadingView({ navigation, onBack }) {
@@ -325,7 +356,13 @@ export function AnalysisLoadingView({ navigation, onBack }) {
 
 export default function AnalysisLoadingScreen({ navigation, route }) {
   const routeRecordId = route?.params?.recordId;
+  const routeRecordDate = route?.params?.recordDate;
+  const returnTo = useMemo(
+    () => normalizeReturnTo(route?.params?.returnTo, "Home"),
+    [route?.params?.returnTo]
+  );
   const shouldStartGeneration = route?.params?.shouldStartGeneration === true;
+  const isTodayRecord = !routeRecordDate || routeRecordDate === getTodayDateKey();
 
   useEffect(() => {
     setAnalysisLoadingVisible(true, "AnalysisLoadingScreen");
@@ -369,40 +406,29 @@ export default function AnalysisLoadingScreen({ navigation, route }) {
       let recordId = null;
 
       try {
-        const status = await recordsApi.getTodayStatus();
-        const statusRecordId = getStatusRecordId(status);
+        if (routeRecordId) {
+          recordId = routeRecordId;
+        } else {
+          const status = await recordsApi.getTodayStatus();
+          const statusRecordId = getStatusRecordId(status);
 
-        recordId = routeRecordId ?? statusRecordId;
+          recordId = statusRecordId;
 
-        if (attempts === 1 || status?.screen === "RESULT") {
-          console.log("[AnalysisLoading] status", {
-            attempt: attempts,
-            routeRecordId,
-            recordId,
-            screen: status?.screen,
-          });
-        }
+          if (status?.screen === "RESULT" && recordId) {
+            try {
+              const casting = await castingsApi.getCastingByRecordId(recordId);
+              const result = normalizeCastingResult(casting, recordId);
 
-        if (status?.screen === "RESULT" && recordId) {
-          try {
-            const casting = await castingsApi.getCastingByRecordId(recordId);
-            const result = normalizeCastingResult(casting, recordId);
-
-            console.log("[AnalysisLoading] result casting", {
-              recordId,
-              title: result.title,
-              imageUrl: result.imageUrl,
-              imageKey: result.imageKey,
-              raw: casting,
-            });
-
-            setTodayResultReady(true, result);
-            navigateResult(navigation, recordId, result);
-            return;
-          } catch (error) {
-            console.warn("[AnalysisLoading] RESULT status but casting fetch failed:", error);
-            navigateResult(navigation, recordId);
-            return;
+              if (hasCompleteCastingResult(result)) {
+                setTodayResultReady(true, result);
+                navigateResult(navigation, recordId, result, routeRecordDate, returnTo);
+                return;
+              }
+            } catch (error) {
+              if (![404, 409].includes(error?.response?.status)) {
+                console.warn("[AnalysisLoading] RESULT status but casting fetch failed:", error);
+              }
+            }
           }
         }
       } catch (error) {
@@ -440,18 +466,7 @@ export default function AnalysisLoadingScreen({ navigation, route }) {
 
         const result = normalizeCastingResult(casting, recordId);
 
-        if (attempts === 1 || hasDisplayResult(result)) {
-          console.log("[AnalysisLoading] casting poll", {
-            attempt: attempts,
-            recordId,
-            title: result.title,
-            imageUrl: result.imageUrl,
-            imageKey: result.imageKey,
-            raw: casting,
-          });
-        }
-
-        if (!hasDisplayResult(result)) {
+        if (!hasCompleteCastingResult(result)) {
           if (attempts < maxAttempts) {
             retryTimer = setTimeout(runAnalysis, 1800);
             return;
@@ -460,16 +475,20 @@ export default function AnalysisLoadingScreen({ navigation, route }) {
           return;
         }
 
-        setTodayResultReady(true, result);
-        navigateResult(navigation, recordId, result);
+        if (isTodayRecord) {
+          setTodayResultReady(true, result);
+        }
+        navigateResult(navigation, recordId, result, routeRecordDate, returnTo);
       } catch (error) {
-        console.warn("[AnalysisLoading] casting poll failed:", {
-          attempt: attempts,
-          recordId,
-          status: error?.response?.status,
-          data: error?.response?.data,
-          message: error?.message,
-        });
+        if (![404, 409].includes(error?.response?.status)) {
+          console.warn("[AnalysisLoading] casting poll failed:", {
+            attempt: attempts,
+            recordId,
+            status: error?.response?.status,
+            data: error?.response?.data,
+            message: error?.message,
+          });
+        }
 
         if (!active) {
           return;
@@ -487,11 +506,11 @@ export default function AnalysisLoadingScreen({ navigation, route }) {
       active = false;
       clearTimeout(retryTimer);
     };
-  }, [navigation, routeRecordId, shouldStartGeneration]);
+  }, [navigation, routeRecordDate, routeRecordId, shouldStartGeneration, isTodayRecord, returnTo]);
 
   const goBack = () => {
     clearAnalysisLoadingVisible();
-    navigation.goBack();
+    navigateToReturnTarget(navigation, returnTo, "Home");
   };
 
   return <AnalysisLoadingView navigation={navigation} onBack={goBack} />;

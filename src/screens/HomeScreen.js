@@ -21,7 +21,6 @@ import Svg, {
 } from "react-native-svg";
 import NotificationSheet from "../components/NotificationSheet";
 import castingsApi from "../api/castings-api";
-import recordsApi from "../api/records-api";
 import { useUser } from "../contexts/UserContext";
 import { CastingCardFront } from "./CalendarScreen";
 import {
@@ -37,6 +36,11 @@ import {
   subscribeTodayRecordState,
 } from "../services/todayRecordState";
 import { notifyFavoriteChanged, subscribeFavoriteChanges } from "../services/favoriteState";
+import { findNavigationWithRoute } from "../services/flowNavigation";
+import {
+  hasCompleteCastingImage,
+  resolveTodayCastingTarget,
+} from "../services/todayCastingResolver";
 
 const CARD_PATH =
   "M31 1 H174 C179 14 188 21 202 21 C216 21 225 14 230 1 H373 C383 1 390 8 390 18 C399 19 404 26 404 36 V555 C404 565 398 571 388 571 C388 579 381 583 372 583 H32 C23 583 16 579 16 571 C6 571 0 565 0 555 V36 C0 26 6 20 14 18 C14 8 21 1 31 1 Z";
@@ -66,15 +70,6 @@ const pickFirst = (...values) =>
   values.find((value) => value !== undefined && value !== null && value !== "");
 
 const formatDisplayDate = (dateKey) => dateKey.replaceAll("-", ".");
-
-const getStatusRecordId = (status) =>
-  pickFirst(
-    status?.dailyRecordId,
-    status?.recordId,
-    status?.record?.id,
-    status?.dailyRecord?.id,
-    status?.id
-  );
 
 const normalizeHomeResult = (casting, fallbackRecordId) => {
   if (!casting || typeof casting !== "object") {
@@ -128,7 +123,10 @@ export default function HomeScreen({ navigation, route }) {
   );
   const statusAllowsResult =
     todayScreen === null ? todayState.resultReady : todayScreen === "RESULT";
-  const hasResultCard = statusAllowsResult && Boolean(resultCard);
+  const hasResultCard =
+    statusAllowsResult &&
+    Boolean(resultCard) &&
+    hasCompleteCastingImage(resultCard);
   const resultRows = useMemo(
     () => [
       { icon: "movie-open-outline", label: "오늘의 장르", text: resultCard?.genre },
@@ -137,8 +135,66 @@ export default function HomeScreen({ navigation, route }) {
     ],
     [resultCard]
   );
-  const goInput = () => {
-    navigation?.navigate?.("DailyRecord");
+  const goInput = async () => {
+    const returnTo = { screen: "Home" };
+
+    try {
+      const target = await resolveTodayCastingTarget();
+      const recordId = target.recordId;
+      const recordDate = target.recordDate ?? getTodayDateKey();
+
+      if (target.screen === "RESULT" && target.casting) {
+        const normalized = normalizeHomeResult(target.casting, recordId);
+
+        if (normalized) {
+          const normalizedResult = { ...normalized, recordDate };
+
+          setHomeResult(normalizedResult);
+          setTodayResultReady(true, normalizedResult);
+        }
+
+        navigation?.navigate?.("Result", {
+          recordId,
+          dailyRecordId: recordId,
+          recordDate,
+          result: normalized
+            ? { ...normalized, recordDate }
+            : { ...target.casting, recordId, recordDate },
+          returnTo,
+        });
+        return;
+      }
+
+      if (["WAITING", "RESULT"].includes(target.screen) && recordId) {
+        const rootNavigation = findNavigationWithRoute(
+          navigation,
+          "AnalysisLoading"
+        );
+        const loadingParams = {
+          recordId,
+          recordDate,
+          returnTo,
+        };
+
+        if (rootNavigation) {
+          rootNavigation.navigate("AnalysisLoading", loadingParams);
+        } else {
+          navigation?.navigate?.("AnalysisLoading", loadingParams);
+        }
+        return;
+      }
+    } catch (error) {
+      console.warn("[HomeScreen] failed to resolve input target:", {
+        statusCode: error?.response?.status,
+        data: error?.response?.data,
+        message: error?.message,
+      });
+    }
+
+    navigation?.navigate?.("DailyRecord", {
+      recordDate: getTodayDateKey(),
+      returnTo,
+    });
   };
 
   useEffect(() => subscribeNotificationState(setNotificationState), []);
@@ -164,36 +220,29 @@ export default function HomeScreen({ navigation, route }) {
 
     const loadTodayResult = async () => {
       try {
-        const status = await recordsApi.getTodayStatus();
+        const target = await resolveTodayCastingTarget();
 
         if (!active) {
           return;
         }
 
-        setTodayScreen(status?.screen ?? null);
+        setTodayScreen(target.screen ?? null);
 
-        if (status?.screen !== "RESULT") {
+        if (target.screen !== "RESULT" || !target.casting) {
           setHomeResult(null);
           return;
         }
 
-        const recordId = getStatusRecordId(status);
-
-        if (!recordId) {
-          return;
-        }
-
-        const casting = await castingsApi.getCastingByRecordId(recordId);
-
-        if (!active) {
-          return;
-        }
-
-        const normalized = normalizeHomeResult(casting, recordId);
+        const normalized = normalizeHomeResult(target.casting, target.recordId);
 
         if (normalized) {
-          setHomeResult(normalized);
-          setTodayResultReady(true, normalized);
+          const normalizedResult = {
+            ...normalized,
+            recordDate: target.recordDate ?? getTodayDateKey(),
+          };
+
+          setHomeResult(normalizedResult);
+          setTodayResultReady(true, normalizedResult);
         }
       } catch (error) {
         console.warn("[HomeScreen] failed to load today casting:", {
@@ -218,9 +267,12 @@ export default function HomeScreen({ navigation, route }) {
       return;
     }
 
+    const recordDate = resultCard.recordDate ?? getTodayDateKey();
+
     navigation?.navigate?.("Result", {
       recordId: resultCard.recordId,
       dailyRecordId: resultCard.dailyRecordId,
+      recordDate,
       result: resultCard,
     });
   };
@@ -248,7 +300,7 @@ export default function HomeScreen({ navigation, route }) {
       );
       notifyFavoriteChanged({
         recordId: resultCard.recordId,
-        dateKey: getTodayDateKey(),
+        dateKey: resultCard.recordDate ?? getTodayDateKey(),
         isFavorite: updatedLiked,
       });
     } catch (error) {
@@ -305,7 +357,7 @@ export default function HomeScreen({ navigation, route }) {
             >
               <View style={styles.resultCastingCardInner}>
                 <CastingCardFront
-                  date={formatDisplayDate(getTodayDateKey())}
+                  date={formatDisplayDate(resultCard.recordDate ?? getTodayDateKey())}
                   record={resultCard}
                   eyebrow="TODAY’S CASTING"
                   rows={resultRows}

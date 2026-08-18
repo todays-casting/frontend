@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   Animated,
   Image,
@@ -51,6 +51,19 @@ const formatFullDate = (date) =>
   `${date.getFullYear()}.${String(date.getMonth() + 1).padStart(2, "0")}.${String(
     date.getDate()
   ).padStart(2, "0")}`;
+
+const isPlaceholderImageUrl = (value) =>
+  typeof value === "string" &&
+  /\/default-[^/?#]+\.png(?:[?#].*)?$/i.test(value);
+
+const hasCompleteCastingImage = (casting) =>
+  Boolean(
+    casting &&
+      typeof casting.imageUrl === "string" &&
+      casting.imageUrl.trim().length > 0 &&
+      !isPlaceholderImageUrl(casting.imageUrl) &&
+      (casting.hasGeneratedImageUrl || casting.imageKey)
+  );
 
 const createCalendarDays = (year, month, today) => {
   const firstDay = new Date(year, month, 1);
@@ -163,46 +176,51 @@ export default function CalendarScreen({ navigation }) {
         imageUrl: selectedCasting.imageUrl,
       }
     : RECORD;
+  const calendarReturnTo = useMemo(() => ({ screen: "Calendar" }), []);
+
+  const loadMonthlyMarkers = useCallback(async (isActive = () => true) => {
+    try {
+      setCalendarError("");
+      const markers = await calendarApi.getMonthlyMarkers(yearMonth);
+
+      if (!isActive()) {
+        return;
+      }
+
+      setMonthlyMarkers(markers);
+      setFavoriteDates(
+        new Set(
+          markers
+            .filter((marker) => marker.hasRecord && marker.isFavorite)
+            .map((marker) => marker.recordDate)
+        )
+      );
+    } catch (error) {
+      if (!isActive()) {
+        return;
+      }
+
+      setMonthlyMarkers([]);
+      setFavoriteDates(new Set());
+      setCalendarError(
+        error.response?.data?.message ?? "달력 기록을 불러오지 못했습니다."
+      );
+    }
+  }, [yearMonth]);
 
   useEffect(() => {
     let active = true;
 
-    const loadMonthlyMarkers = async () => {
-      try {
-        setCalendarError("");
-        const markers = await calendarApi.getMonthlyMarkers(yearMonth);
-
-        if (!active) {
-          return;
-        }
-
-        setMonthlyMarkers(markers);
-        setFavoriteDates(
-          new Set(
-            markers
-              .filter((marker) => marker.hasRecord && marker.isFavorite)
-              .map((marker) => marker.recordDate)
-          )
-        );
-      } catch (error) {
-        if (!active) {
-          return;
-        }
-
-        setMonthlyMarkers([]);
-        setFavoriteDates(new Set());
-        setCalendarError(
-          error.response?.data?.message ?? "달력 기록을 불러오지 못했습니다."
-        );
-      }
-    };
-
-    loadMonthlyMarkers();
+    loadMonthlyMarkers(() => active);
+    const unsubscribeFocus = navigation?.addListener?.("focus", () => {
+      loadMonthlyMarkers(() => active);
+    });
 
     return () => {
       active = false;
+      unsubscribeFocus?.();
     };
-  }, [yearMonth]);
+  }, [loadMonthlyMarkers, navigation]);
 
   useEffect(
     () =>
@@ -253,6 +271,8 @@ export default function CalendarScreen({ navigation }) {
       return;
     }
 
+    let recordIdForLoading = null;
+
     setActiveDate(day.date);
     setIsBack(false);
     flip.setValue(0);
@@ -279,7 +299,25 @@ export default function CalendarScreen({ navigation }) {
         return;
       }
 
+      recordIdForLoading = record.id;
       const casting = await castingsApi.getCastingByRecordId(record.id);
+
+      if (!hasCompleteCastingImage(casting)) {
+        const rootNavigation = navigation?.getParent?.();
+        const loadingParams = {
+          recordId: record.id,
+          recordDate: day.key,
+          returnTo: calendarReturnTo,
+        };
+
+        if (rootNavigation) {
+          rootNavigation.navigate("AnalysisLoading", loadingParams);
+        } else {
+          navigation?.navigate?.("AnalysisLoading", loadingParams);
+        }
+        return;
+      }
+
       setSelectedRecord(record);
       setSelectedCasting(casting);
       setFavoriteDates((current) => {
@@ -303,6 +341,24 @@ export default function CalendarScreen({ navigation }) {
         }).start();
       });
     } catch (error) {
+      if ([404, 409].includes(error?.response?.status)) {
+        const rootNavigation = navigation?.getParent?.();
+        const loadingParams = {
+          recordId: recordIdForLoading,
+          recordDate: day.key,
+          returnTo: calendarReturnTo,
+        };
+
+        if (loadingParams.recordId) {
+          if (rootNavigation) {
+            rootNavigation.navigate("AnalysisLoading", loadingParams);
+          } else {
+            navigation?.navigate?.("AnalysisLoading", loadingParams);
+          }
+          return;
+        }
+      }
+
       setRecordError(
         error.response?.data?.message ?? "선택한 날짜의 카드를 불러오지 못했습니다."
       );
@@ -380,7 +436,10 @@ export default function CalendarScreen({ navigation }) {
     const dateKey = activeDateKey;
 
     if (!recordDates.has(dateKey)) {
-      navigation?.navigate?.("DailyRecord");
+      navigation?.navigate?.("DailyRecord", {
+        recordDate: dateKey,
+        returnTo: calendarReturnTo,
+      });
       return;
     }
 
@@ -390,17 +449,48 @@ export default function CalendarScreen({ navigation }) {
       const record = await recordsApi.getRecordByDate(dateKey);
 
       if (!record?.id || record.status !== "COMPLETED") {
-        navigation?.navigate?.("DailyRecord");
+        navigation?.navigate?.("DailyRecord", {
+          recordDate: dateKey,
+          returnTo: calendarReturnTo,
+        });
         return;
       }
 
-      const casting = await castingsApi.getCastingByRecordId(record.id);
+      let casting = null;
+
+      try {
+        casting = await castingsApi.getCastingByRecordId(record.id);
+      } catch (error) {
+        const statusCode = error?.response?.status;
+
+        if ([400, 404, 409].includes(statusCode)) {
+          const rootNavigation = navigation?.getParent?.();
+          const loadingParams = {
+            recordId: record.id,
+            recordDate: dateKey,
+            returnTo: calendarReturnTo,
+            shouldStartGeneration: true,
+          };
+
+          if (rootNavigation) {
+            rootNavigation.navigate("AnalysisLoading", loadingParams);
+          } else {
+            navigation?.navigate?.("AnalysisLoading", loadingParams);
+          }
+          return;
+        }
+
+        throw error;
+      }
 
       const params = {
         recordId: record.id,
+        recordDate: dateKey,
+        returnTo: calendarReturnTo,
         result: {
           ...casting,
           recordId: record.id,
+          recordDate: dateKey,
         },
       };
       const rootNavigation = navigation?.getParent?.();

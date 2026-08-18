@@ -21,6 +21,10 @@ import {
   setTodayResultReady,
   subscribeTodayRecordState,
 } from "../services/todayRecordState";
+import {
+  navigateToReturnTarget,
+  normalizeReturnTo,
+} from "../services/flowNavigation";
 import recordsApi from "../api/records-api";
 import castingsApi from "../api/castings-api";
 
@@ -86,10 +90,68 @@ const MOODS = [
   { icon: require("../../assets/images/daily-record-icons/keyword-other.png"), label: "기타" },
 ];
 
-export default function DailyRecordScreen({ navigation }) {
+const splitKnownAndCustomTags = (values, options) => {
+  const list = Array.isArray(values) ? values.filter(Boolean) : [];
+  const optionLabels = new Set(options.map((option) => option.label));
+  const selected = list.filter((value) => optionLabels.has(value));
+  const custom = list.find((value) => !optionLabels.has(value)) ?? "";
+
+  return { selected, custom };
+};
+
+const resetRecordForm = ({
+  setDiary,
+  setEmotion,
+  setKeywords,
+  setMood,
+  setCustomEmotion,
+  setCustomKeyword,
+  setCustomMood,
+}) => {
+  setDiary("");
+  setEmotion([]);
+  setKeywords([]);
+  setMood("");
+  setCustomEmotion("");
+  setCustomKeyword("");
+  setCustomMood("");
+};
+
+const applyRecordToForm = (record, setters) => {
+  if (!record) {
+    resetRecordForm(setters);
+    return;
+  }
+
+  const emotionTags = splitKnownAndCustomTags(
+    record.mood ?? record.emotions ?? record.emotionTags,
+    EMOTIONS
+  );
+  const keywordTags = splitKnownAndCustomTags(
+    record.activityTags ?? record.keywords ?? record.keywordTags,
+    KEYWORDS
+  );
+  const moodTags = splitKnownAndCustomTags(
+    record.moodTags ?? record.moodTag ?? record.atmosphereTags,
+    MOODS
+  );
+
+  setters.setDiary(record.content ?? "");
+  setters.setEmotion(emotionTags.selected);
+  setters.setKeywords(keywordTags.selected);
+  setters.setMood(moodTags.selected[0] ?? "");
+  setters.setCustomEmotion(emotionTags.custom);
+  setters.setCustomKeyword(keywordTags.custom);
+  setters.setCustomMood(moodTags.custom);
+};
+
+export default function DailyRecordScreen({ navigation, route }) {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const { styles, sizes } = createStyles(width, height, insets);
+  const targetRecordDate = route?.params?.recordDate ?? getTodayDateKey();
+  const targetIsToday = targetRecordDate === getTodayDateKey();
+  const returnTo = normalizeReturnTo(route?.params?.returnTo, "Home");
 
   const [diary, setDiary] = useState("");
   const [emotion, setEmotion] = useState([]);
@@ -109,6 +171,7 @@ export default function DailyRecordScreen({ navigation }) {
   const [skipConfirmNextTime, setSkipConfirmNextTime] = useState(false);
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
+  const resultReadyForTarget = targetIsToday && resultReady;
 
   const count = useMemo(() => diary.length, [diary]);
 
@@ -118,6 +181,44 @@ export default function DailyRecordScreen({ navigation }) {
       setLocalResultNoticeHidden(nextState.resultNoticeHidden);
     });
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    const setters = {
+      setDiary,
+      setEmotion,
+      setKeywords,
+      setMood,
+      setCustomEmotion,
+      setCustomKeyword,
+      setCustomMood,
+    };
+
+    resetRecordForm(setters);
+    setDialog(null);
+    setConfirmVisible(false);
+
+    recordsApi
+      .getRecordByDate(targetRecordDate)
+      .then((record) => {
+        if (active) {
+          applyRecordToForm(record, setters);
+        }
+      })
+      .catch((error) => {
+        if (![404].includes(error?.response?.status)) {
+          console.warn("Failed to load daily record form:", error);
+        }
+
+        if (active) {
+          resetRecordForm(setters);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [targetRecordDate]);
 
   const toggleListItem = (setter) => (label) => {
     setter((current) => {
@@ -164,7 +265,7 @@ export default function DailyRecordScreen({ navigation }) {
   const startAnalysis = async () => {
     const rootNavigation = findNavigationWithRoute(navigation, "Main");
 
-    if (resultReady) {
+    if (resultReadyForTarget) {
       try {
         const status = await recordsApi.getTodayStatus();
         const recordId =
@@ -178,13 +279,17 @@ export default function DailyRecordScreen({ navigation }) {
           const casting = await castingsApi.getCastingByRecordId(recordId);
           const result = normalizeCastingResultForApi(casting, recordId);
 
-          setTodayResultReady(true, result);
-          navigateResultForApi(recordId, result);
+          if (hasCompleteCastingResultForApi(result)) {
+            setTodayResultReady(true, result);
+            navigateResultForApi(recordId, result);
+          } else {
+            goAnalysisLoadingForApi(recordId, false, targetRecordDate);
+          }
           return;
         }
 
         if (status?.screen === "WAITING") {
-          goAnalysisLoadingForApi(recordId);
+          goAnalysisLoadingForApi(recordId, false, targetRecordDate);
           return;
         }
       } catch (error) {
@@ -234,7 +339,7 @@ export default function DailyRecordScreen({ navigation }) {
   };
 
   const buildRecordPayloadForApi = (status) => ({
-    recordDate: getTodayDateKey(),
+    recordDate: targetRecordDate,
     content: diary.trim(),
     mood: buildTagListForApi(emotion, customEmotion),
     moodTags: buildTagListForApi(mood, customMood).slice(0, 1),
@@ -423,6 +528,22 @@ export default function DailyRecordScreen({ navigation }) {
   const hasCastingDisplayResult = (result) =>
     typeof result?.title === "string" && result.title.trim().length > 0;
 
+  const isPlaceholderImageUrlForApi = (value) =>
+    typeof value === "string" &&
+    /\/default-[^/?#]+\.png(?:[?#].*)?$/i.test(value);
+
+  const hasGeneratedCastingImageForApi = (result) =>
+    Boolean(
+      result &&
+        typeof result.imageUrl === "string" &&
+        result.imageUrl.trim().length > 0 &&
+        !isPlaceholderImageUrlForApi(result.imageUrl) &&
+        (result.hasGeneratedImageUrl || result.imageKey)
+    );
+
+  const hasCompleteCastingResultForApi = (result) =>
+    hasCastingDisplayResult(result) && hasGeneratedCastingImageForApi(result);
+
   const getCastingErrorMessage = (error) =>
     error?.response?.data?.message ??
     error?.response?.data?.error ??
@@ -437,12 +558,12 @@ export default function DailyRecordScreen({ navigation }) {
       const createdCasting = await castingsApi.createCasting(recordId);
       let result = normalizeCastingResultForApi(createdCasting, recordId);
 
-      if (!hasCastingDisplayResult(result) || !result.imageUrl) {
+      if (!hasCompleteCastingResultForApi(result)) {
         const casting = await castingsApi.getCastingByRecordId(recordId);
         result = normalizeCastingResultForApi(casting, recordId);
       }
 
-      if (!hasCastingDisplayResult(result)) {
+      if (!hasCompleteCastingResultForApi(result)) {
         return null;
       }
 
@@ -459,7 +580,9 @@ export default function DailyRecordScreen({ navigation }) {
 
   const navigateResultForApi = (recordId, result) => {
     const rootNavigation = findNavigationWithRoute(navigation, "Main");
-    const params = recordId ? { recordId, result } : { result };
+    const params = recordId
+      ? { recordId, recordDate: targetRecordDate, returnTo, result }
+      : { recordDate: targetRecordDate, returnTo, result };
 
     if (rootNavigation) {
       rootNavigation.navigate("Main", {
@@ -472,9 +595,15 @@ export default function DailyRecordScreen({ navigation }) {
     navigation.navigate("Result", params);
   };
 
-  const goAnalysisLoadingForApi = (recordId, shouldStartGeneration = false) => {
+  const goAnalysisLoadingForApi = (
+    recordId,
+    shouldStartGeneration = false,
+    recordDate = targetRecordDate
+  ) => {
     const rootNavigation = findNavigationWithRoute(navigation, "AnalysisLoading");
-    const params = recordId ? { recordId, shouldStartGeneration } : { shouldStartGeneration };
+    const params = recordId
+      ? { recordId, recordDate, returnTo, shouldStartGeneration }
+      : { recordDate, returnTo, shouldStartGeneration };
 
     if (rootNavigation) {
       rootNavigation.navigate("AnalysisLoading", params);
@@ -509,8 +638,10 @@ export default function DailyRecordScreen({ navigation }) {
     const record = await saveRecordForApi("COMPLETED");
 
     if (record?.id) {
-      setTodayResultReady(false);
-      goAnalysisLoadingForApi(record.id, true);
+      if (targetIsToday) {
+        setTodayResultReady(false);
+      }
+      goAnalysisLoadingForApi(record.id, true, targetRecordDate);
     } else if (record) {
       showDialog("\uAE30\uB85D\uC740 \uC800\uC7A5\uB410\uC9C0\uB9CC \uACB0\uACFC \uC870\uD68C\uC5D0 \uD544\uC694\uD55C ID\uB97C \uBC1B\uC9C0 \uBABB\uD588\uC5B4\uC694.");
     }
@@ -523,7 +654,7 @@ export default function DailyRecordScreen({ navigation }) {
 
     const rootNavigation = findNavigationWithRoute(navigation, "Main");
 
-    if (resultReady) {
+    if (resultReadyForTarget) {
       try {
         const status = await recordsApi.getTodayStatus();
         const recordId =
@@ -537,13 +668,17 @@ export default function DailyRecordScreen({ navigation }) {
           const casting = await castingsApi.getCastingByRecordId(recordId);
           const result = normalizeCastingResultForApi(casting, recordId);
 
-          setTodayResultReady(true, result);
-          navigateResultForApi(recordId, result);
+          if (hasCompleteCastingResultForApi(result)) {
+            setTodayResultReady(true, result);
+            navigateResultForApi(recordId, result);
+          } else {
+            goAnalysisLoadingForApi(recordId, false, targetRecordDate);
+          }
           return;
         }
 
         if (status?.screen === "WAITING") {
-          goAnalysisLoadingForApi(recordId);
+          goAnalysisLoadingForApi(recordId, false, targetRecordDate);
           return;
         }
       } catch (error) {
@@ -581,8 +716,10 @@ export default function DailyRecordScreen({ navigation }) {
     const record = await saveRecordForApi("COMPLETED");
 
     if (record?.id) {
-      setTodayResultReady(false);
-      goAnalysisLoadingForApi(record.id, true);
+      if (targetIsToday) {
+        setTodayResultReady(false);
+      }
+      goAnalysisLoadingForApi(record.id, true, targetRecordDate);
     } else if (record) {
       showDialog("\uAE30\uB85D\uC740 \uC800\uC7A5\uB410\uC9C0\uB9CC \uACB0\uACFC \uC870\uD68C\uC5D0 \uD544\uC694\uD55C ID\uB97C \uBC1B\uC9C0 \uBABB\uD588\uC5B4\uC694.");
     }
@@ -612,7 +749,7 @@ export default function DailyRecordScreen({ navigation }) {
               <TouchableOpacity
                 activeOpacity={0.74}
                 style={styles.headerIconButton}
-                onPress={() => navigation?.navigate?.("Home")}
+                onPress={() => navigateToReturnTarget(navigation, returnTo, "Home")}
               >
                 <Ionicons name="chevron-back" size={sizes.headerIcon} color="#FFB36B" />
               </TouchableOpacity>
@@ -721,7 +858,7 @@ export default function DailyRecordScreen({ navigation }) {
             <Text style={styles.ctaSparkle}>{"✦"}</Text>
             <MaterialCommunityIcons name="movie-open" size={sizes.ctaIcon} color="#FFFFFF" />
             <Text style={styles.ctaText} numberOfLines={1} adjustsFontSizeToFit>
-              {resultReady ? "오늘의 결과 보기" : COPY.cta}
+              {resultReadyForTarget ? "오늘의 결과 보기" : COPY.cta}
             </Text>
             <Text style={styles.ctaSparkle}>{"✦"}</Text>
           </TouchableOpacity>

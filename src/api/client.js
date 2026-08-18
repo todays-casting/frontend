@@ -12,6 +12,7 @@ const client = axios.create({
 });
 
 let cachedAccessToken = null;
+let hydrationPromise = null;
 
 export const setAccessToken = (accessToken) => {
   cachedAccessToken = accessToken || null;
@@ -30,7 +31,13 @@ export const hydrateAccessToken = async () => {
     return cachedAccessToken;
   }
 
-  const storedAccessToken = await AsyncStorage.getItem(ACCESS_TOKEN_KEY);
+  if (!hydrationPromise) {
+    hydrationPromise = AsyncStorage.getItem(ACCESS_TOKEN_KEY).finally(() => {
+      hydrationPromise = null;
+    });
+  }
+
+  const storedAccessToken = await hydrationPromise;
 
   if (storedAccessToken) {
     cachedAccessToken = storedAccessToken;
@@ -45,10 +52,13 @@ client.interceptors.request.use(async (config) => {
     return config;
   }
 
+  config.headers = config.headers ?? {};
+
   const existingAuthorization =
     config.headers?.Authorization ?? client.defaults.headers.common.Authorization;
 
   if (existingAuthorization) {
+    config.headers.Authorization = existingAuthorization;
     return config;
   }
 

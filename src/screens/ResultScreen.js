@@ -24,6 +24,10 @@ import {
   clearAnalysisLoadingVisible,
   setAnalysisLoadingVisible,
 } from "../services/navigationUiState";
+import {
+  navigateToReturnTarget,
+  normalizeReturnTo,
+} from "../services/flowNavigation";
 import castingsApi from "../api/castings-api";
 import recordsApi from "../api/records-api";
 import { notifyFavoriteChanged, subscribeFavoriteChanges } from "../services/favoriteState";
@@ -214,6 +218,16 @@ const hasUsableImage = (result) =>
       !isPlaceholderImageUrl(result.imageUrl)
   );
 
+const hasGeneratedCastingImage = (result) =>
+  Boolean(
+    result &&
+      hasUsableImage(result) &&
+      (result.hasGeneratedImageUrl || result.imageKey)
+  );
+
+const hasCompleteCastingResult = (result) =>
+  hasResolvedResult(result) && hasGeneratedCastingImage(result);
+
 const normalizeCastingImageUrl = (casting, fallbackImageUrl) =>
   normalizeImageUrl(
     pickFirst(
@@ -240,7 +254,12 @@ const normalizeCastingImageKey = (casting, fallbackImageKey) =>
     fallbackImageKey
   );
 
-const applyCastingResult = (casting, recordId, setServerResult) => {
+const applyCastingResult = (
+  casting,
+  recordId,
+  setServerResult,
+  shouldPersistTodayResult = true
+) => {
   const normalized = normalizeResult(casting);
   const imageUrl = normalizeCastingImageUrl(casting, normalized.imageUrl);
   const imageKey = normalizeCastingImageKey(casting, normalized.imageKey);
@@ -259,7 +278,7 @@ const applyCastingResult = (casting, recordId, setServerResult) => {
 
   setServerResult(result);
 
-  if (hasResolvedResult(result)) {
+  if (shouldPersistTodayResult && hasCompleteCastingResult(result)) {
     setTodayResultReady(true, result);
   }
 
@@ -366,16 +385,22 @@ export default function ResultScreen({ navigation, route }) {
   const [favoriteSaving, setFavoriteSaving] = useState(false);
   const [serverResult, setServerResult] = useState(null);
   const [statusRecordId, setStatusRecordId] = useState(null);
+  const routeRecordDate = route?.params?.recordDate;
+  const returnTo = useMemo(
+    () => normalizeReturnTo(route?.params?.returnTo, "Home"),
+    [route?.params?.returnTo]
+  );
+  const resultDateKey = routeRecordDate || todayState.resultDate || getTodayDateKey();
+  const isTodayResult = resultDateKey === getTodayDateKey();
   const result = useMemo(() => {
-    const date = todayState.resultDate || getTodayDateKey();
     const storedOrRouteResult =
       serverResult ?? route?.params?.result ?? todayState.resultData;
 
     return {
       ...normalizeResult(storedOrRouteResult),
-      date: formatDisplayDate(date),
+      date: formatDisplayDate(resultDateKey),
     };
-  }, [route?.params?.result, serverResult, todayState.resultData, todayState.resultDate]);
+  }, [route?.params?.result, resultDateKey, serverResult, todayState.resultData]);
   const currentRecordId =
     route?.params?.recordId ??
     route?.params?.dailyRecordId ??
@@ -405,7 +430,7 @@ export default function ResultScreen({ navigation, route }) {
   );
 
   useEffect(() => {
-    const loadingVisible = isFocused && !hasResolvedResult(result);
+    const loadingVisible = isFocused && !hasCompleteCastingResult(result);
 
     setAnalysisLoadingVisible(loadingVisible, "ResultScreen");
 
@@ -415,7 +440,7 @@ export default function ResultScreen({ navigation, route }) {
   }, [isFocused, result]);
 
   useEffect(() => {
-    if (hasResolvedResult(result)) {
+    if (hasCompleteCastingResult(result) || currentRecordId) {
       return;
     }
 
@@ -441,9 +466,14 @@ export default function ResultScreen({ navigation, route }) {
               return;
             }
 
-            const resolved = applyCastingResult(casting, recordId, setServerResult);
+            const resolved = applyCastingResult(
+              casting,
+              recordId,
+              setServerResult,
+              isTodayResult
+            );
 
-            if (hasResolvedResult(resolved)) {
+            if (hasCompleteCastingResult(resolved)) {
               return;
             }
           } catch (castingError) {
@@ -461,11 +491,11 @@ export default function ResultScreen({ navigation, route }) {
           const rootNavigation = findNavigationWithRoute(navigation, "AnalysisLoading");
 
           if (rootNavigation) {
-            rootNavigation.navigate("AnalysisLoading", { recordId });
+            rootNavigation.navigate("AnalysisLoading", { recordId, returnTo });
           } else if (typeof navigation.replace === "function") {
-            navigation.replace("AnalysisLoading", { recordId });
+            navigation.replace("AnalysisLoading", { recordId, returnTo });
           } else {
-            navigation.navigate("AnalysisLoading", { recordId });
+            navigation.navigate("AnalysisLoading", { recordId, returnTo });
           }
           return;
         }
@@ -484,7 +514,7 @@ export default function ResultScreen({ navigation, route }) {
     return () => {
       active = false;
     };
-  }, [navigation, result]);
+  }, [currentRecordId, isTodayResult, navigation, result, returnTo]);
 
   useEffect(() => {
     if (!currentRecordId) {
@@ -506,36 +536,30 @@ export default function ResultScreen({ navigation, route }) {
           return;
         }
 
-        const normalized = applyCastingResult(casting, currentRecordId, setServerResult);
+        const normalized = applyCastingResult(
+          casting,
+          currentRecordId,
+          setServerResult,
+          isTodayResult
+        );
 
-        if (attempts === 1 || hasUsableImage(normalized)) {
-          console.log("[ResultScreen] casting poll", {
-            attempt: attempts,
-            recordId: currentRecordId,
-            title: normalized.title,
-            imageUrl: normalized.imageUrl,
-            imageKey: normalized.imageKey,
-            raw: casting,
-          });
-        }
-
-        if (hasResolvedResult(normalized)) {
-          if (hasUsableImage(normalized)) {
-            return;
-          }
+        if (hasCompleteCastingResult(normalized)) {
+          return;
         }
 
         if (attempts < maxAttempts) {
           retryTimer = setTimeout(loadCasting, 1800);
         }
       } catch (error) {
-        console.warn("[ResultScreen] casting poll failed:", {
-          attempt: attempts,
-          recordId: currentRecordId,
-          statusCode: error?.response?.status,
-          data: error?.response?.data,
-          message: error?.message,
-        });
+        if (![404, 409].includes(error?.response?.status)) {
+          console.warn("[ResultScreen] casting poll failed:", {
+            attempt: attempts,
+            recordId: currentRecordId,
+            statusCode: error?.response?.status,
+            data: error?.response?.data,
+            message: error?.message,
+          });
+        }
 
         if (active && attempts < maxAttempts) {
           retryTimer = setTimeout(loadCasting, 1800);
@@ -549,7 +573,7 @@ export default function ResultScreen({ navigation, route }) {
       active = false;
       clearTimeout(retryTimer);
     };
-  }, [currentRecordId]);
+  }, [currentRecordId, isTodayResult]);
 
   const resultLiked = todayState.resultLiked || Boolean(result.isFavorite);
 
@@ -571,14 +595,16 @@ export default function ResultScreen({ navigation, route }) {
           : optimisticLiked;
 
       setTodayResultLiked(updatedLiked);
-      setTodayResultReady(true, {
-        ...result,
-        recordId: currentRecordId,
-        isFavorite: updatedLiked,
-      });
+      if (isTodayResult) {
+        setTodayResultReady(true, {
+          ...result,
+          recordId: currentRecordId,
+          isFavorite: updatedLiked,
+        });
+      }
       notifyFavoriteChanged({
         recordId: currentRecordId,
-        dateKey: getTodayDateKey(),
+        dateKey: resultDateKey,
         isFavorite: updatedLiked,
       });
     } catch (error) {
@@ -592,15 +618,8 @@ export default function ResultScreen({ navigation, route }) {
     }
   };
 
-  const goBackHome = () => {
-    if (navigation.getState?.().routeNames?.includes("Home")) {
-      navigation.navigate("Home");
-      return;
-    }
-
-    findNavigationWithRoute(navigation, "Main")?.navigate("Main", {
-      screen: "Home",
-    });
+  const goBackToReturnTarget = () => {
+    navigateToReturnTarget(navigation, returnTo, "Home");
   };
 
   const downloadCard = () => {
@@ -620,13 +639,13 @@ export default function ResultScreen({ navigation, route }) {
         : "",
   };
 
-  if (!hasResolvedResult(result)) {
+  if (!hasCompleteCastingResult(result)) {
     return (
       <AnalysisLoadingView
         navigation={navigation}
         onBack={() => {
           clearAnalysisLoadingVisible();
-          navigation.goBack();
+          navigateToReturnTarget(navigation, returnTo, "Home");
         }}
       />
     );
@@ -654,7 +673,7 @@ export default function ResultScreen({ navigation, route }) {
             <TouchableOpacity
               activeOpacity={0.72}
               style={styles.backButton}
-              onPress={goBackHome}
+              onPress={goBackToReturnTarget}
             >
               <Ionicons name="arrow-back" size={sizes.backIcon} color="#FF934F" />
             </TouchableOpacity>

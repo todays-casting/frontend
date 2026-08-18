@@ -42,6 +42,19 @@ const toDateKey = (date) =>
     date.getDate()
   ).padStart(2, "0")}`;
 
+const isPlaceholderImageUrl = (value) =>
+  typeof value === "string" &&
+  /\/default-[^/?#]+\.png(?:[?#].*)?$/i.test(value);
+
+const hasCompleteCastingImage = (casting) =>
+  Boolean(
+    casting &&
+      typeof casting.imageUrl === "string" &&
+      casting.imageUrl.trim().length > 0 &&
+      !isPlaceholderImageUrl(casting.imageUrl) &&
+      (casting.hasGeneratedImageUrl || casting.imageKey)
+  );
+
 const formatCardDate = (dateKey) => dateKey.replaceAll("-", ".");
 
 const formatDateRange = (start, end) => {
@@ -225,6 +238,25 @@ export default function HistoryScreen({ navigation }) {
     : historyError
       ? historyError
       : formatDateRange(week.start, week.end);
+  const hasHistoryRecords = historyRecords.length > 0;
+
+  useEffect(() => {
+    if (historyRecords.length === 0) {
+      if (activeIndex !== 0) {
+        setActiveIndex(0);
+      }
+      scrollX.setValue(0);
+      return;
+    }
+
+    if (activeIndex > historyRecords.length - 1) {
+      const nextIndex = historyRecords.length - 1;
+
+      setActiveIndex(nextIndex);
+      scrollX.setValue(nextIndex * SNAP);
+      scrollRef.current?.scrollTo({ x: nextIndex * SNAP, animated: false });
+    }
+  }, [activeIndex, historyRecords.length, scrollX]);
 
   useEffect(() => {
     let active = true;
@@ -259,6 +291,11 @@ export default function HistoryScreen({ navigation }) {
             }
 
             const casting = await castingsApi.getCastingByRecordId(dailyRecord.id);
+
+            if (!hasCompleteCastingImage(casting)) {
+              return null;
+            }
+
             const date = new Date(`${recordDate}T00:00:00`);
 
             return {
@@ -532,132 +569,144 @@ export default function HistoryScreen({ navigation }) {
             <Ionicons name="chevron-down" size={ms(20)} color="#CE737D" />
           </TouchableOpacity>
 
-          <View style={styles.carouselWrap}>
-            <Animated.ScrollView
-              ref={scrollRef}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              snapToOffsets={historyRecords.map((_, index) => index * SNAP)}
-              snapToAlignment="start"
-              disableIntervalMomentum
-              decelerationRate="fast"
-              bounces={false}
-              contentOffset={{ x: activeIndex * SNAP, y: 0 }}
-              contentContainerStyle={styles.carouselContent}
-              onScrollBeginDrag={() => {
-                isDraggingRef.current = true;
-                clearTimeout(scrollEndTimerRef.current);
-              }}
-              onScrollEndDrag={() => {
-                isDraggingRef.current = false;
-                scheduleNearestCardSnap(lastScrollOffsetRef.current, 80);
-              }}
-              onMomentumScrollEnd={handleMomentumEnd}
-              onScroll={Animated.event(
-                [{ nativeEvent: { contentOffset: { x: scrollX } } }],
-                {
-                  useNativeDriver: true,
-                  listener: handleCarouselScroll,
-                }
-              )}
-              scrollEventThrottle={16}
-            >
-              {historyRecords.map((record, index) => {
-                const inputRange = [
-                  (index - 1) * SNAP,
-                  index * SNAP,
-                  (index + 1) * SNAP,
-                ];
-                const scale = scrollX.interpolate({
-                  inputRange,
-                  outputRange: [0.82, 1, 0.82],
-                  extrapolate: "clamp",
-                });
-                const opacity = scrollX.interpolate({
-                  inputRange,
-                  outputRange: [0.68, 1, 0.68],
-                  extrapolate: "clamp",
-                });
-                const rotateY = scrollX.interpolate({
-                  inputRange,
-                  outputRange: ["-38deg", "0deg", "38deg"],
-                  extrapolate: "clamp",
-                });
-                const translateX = scrollX.interpolate({
-                  inputRange,
-                  outputRange: [-ms(20), 0, ms(20)],
-                  extrapolate: "clamp",
-                });
-                const translateY = scrollX.interpolate({
-                  inputRange,
-                  outputRange: [vs(15), 0, vs(15)],
-                  extrapolate: "clamp",
-                });
+          {hasHistoryRecords ? (
+            <>
+              <View style={styles.carouselWrap}>
+                <Animated.ScrollView
+                  ref={scrollRef}
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  snapToOffsets={historyRecords.map((_, index) => index * SNAP)}
+                  snapToAlignment="start"
+                  disableIntervalMomentum
+                  decelerationRate="fast"
+                  bounces={false}
+                  contentOffset={{ x: activeIndex * SNAP, y: 0 }}
+                  contentContainerStyle={styles.carouselContent}
+                  onScrollBeginDrag={() => {
+                    isDraggingRef.current = true;
+                    clearTimeout(scrollEndTimerRef.current);
+                  }}
+                  onScrollEndDrag={() => {
+                    isDraggingRef.current = false;
+                    scheduleNearestCardSnap(lastScrollOffsetRef.current, 80);
+                  }}
+                  onMomentumScrollEnd={handleMomentumEnd}
+                  onScroll={Animated.event(
+                    [{ nativeEvent: { contentOffset: { x: scrollX } } }],
+                    {
+                      useNativeDriver: true,
+                      listener: handleCarouselScroll,
+                    }
+                  )}
+                  scrollEventThrottle={16}
+                >
+                  {historyRecords.map((record, index) => {
+                    const inputRange = [
+                      (index - 1) * SNAP,
+                      index * SNAP,
+                      (index + 1) * SNAP,
+                    ];
+                    const scale = scrollX.interpolate({
+                      inputRange,
+                      outputRange: [0.82, 1, 0.82],
+                      extrapolate: "clamp",
+                    });
+                    const opacity = scrollX.interpolate({
+                      inputRange,
+                      outputRange: [0.68, 1, 0.68],
+                      extrapolate: "clamp",
+                    });
+                    const rotateY = scrollX.interpolate({
+                      inputRange,
+                      outputRange: ["-38deg", "0deg", "38deg"],
+                      extrapolate: "clamp",
+                    });
+                    const translateX = scrollX.interpolate({
+                      inputRange,
+                      outputRange: [-ms(20), 0, ms(20)],
+                      extrapolate: "clamp",
+                    });
+                    const translateY = scrollX.interpolate({
+                      inputRange,
+                      outputRange: [vs(15), 0, vs(15)],
+                      extrapolate: "clamp",
+                    });
 
-                return (
-                  <Animated.View
-                    key={record.dateKey}
-                    style={[
-                      styles.cardSlot,
-                      {
-                        opacity,
-                        zIndex: index === activeIndex ? 3 : 1,
-                        elevation: index === activeIndex ? 3 : 1,
-                        transform: [
-                          { perspective: ms(900) },
-                          { translateX },
-                          { translateY },
-                          { rotateY },
-                          { scale },
-                        ],
-                      },
-                    ]}
-                  >
-                    {index === activeIndex ? (
-                      <HistoryFlipCard
-                        record={record}
-                        isFavorite={favoriteDates.has(record.dateKey)}
-                        backVisible={backVisible}
-                        frontRotate={frontRotate}
-                        backRotate={backRotate}
-                        onToggleFavorite={() => toggleFavorite(record)}
-                        onShowBack={showBack}
-                        onShowFront={showFront}
-                      />
-                    ) : (
-                      <HistoryCardFront
-                        record={record}
-                        focused={index === activeIndex}
-                        isFavorite={favoriteDates.has(record.dateKey)}
-                        onToggleFavorite={() => toggleFavorite(record)}
-                        onShowBack={() => scrollToIndex(index)}
-                      />
-                    )}
-                  </Animated.View>
-                );
-              })}
-            </Animated.ScrollView>
+                    return (
+                      <Animated.View
+                        key={record.dateKey}
+                        style={[
+                          styles.cardSlot,
+                          {
+                            opacity,
+                            zIndex: index === activeIndex ? 3 : 1,
+                            elevation: index === activeIndex ? 3 : 1,
+                            transform: [
+                              { perspective: ms(900) },
+                              { translateX },
+                              { translateY },
+                              { rotateY },
+                              { scale },
+                            ],
+                          },
+                        ]}
+                      >
+                        {index === activeIndex ? (
+                          <HistoryFlipCard
+                            record={record}
+                            isFavorite={favoriteDates.has(record.dateKey)}
+                            backVisible={backVisible}
+                            frontRotate={frontRotate}
+                            backRotate={backRotate}
+                            onToggleFavorite={() => toggleFavorite(record)}
+                            onShowBack={showBack}
+                            onShowFront={showFront}
+                          />
+                        ) : (
+                          <HistoryCardFront
+                            record={record}
+                            focused={index === activeIndex}
+                            isFavorite={favoriteDates.has(record.dateKey)}
+                            onToggleFavorite={() => toggleFavorite(record)}
+                            onShowBack={() => scrollToIndex(index)}
+                          />
+                        )}
+                      </Animated.View>
+                    );
+                  })}
+                </Animated.ScrollView>
 
-            <TouchableOpacity
-              activeOpacity={0.65}
-              style={styles.leftEdge}
-              onPress={() => scrollToIndex(activeIndex - 1)}
-            />
-            <TouchableOpacity
-              activeOpacity={0.65}
-              style={styles.rightEdge}
-              onPress={() => scrollToIndex(activeIndex + 1)}
-            />
-          </View>
+                <TouchableOpacity
+                  activeOpacity={0.65}
+                  style={styles.leftEdge}
+                  onPress={() => scrollToIndex(activeIndex - 1)}
+                />
+                <TouchableOpacity
+                  activeOpacity={0.65}
+                  style={styles.rightEdge}
+                  onPress={() => scrollToIndex(activeIndex + 1)}
+                />
+              </View>
 
-          <View style={styles.pagination}>
-            {historyRecords.map((record, index) => (
-              <View
-                key={`${record.dateKey}-dot`}
-                style={[styles.dot, activeIndex === index && styles.activeDot]}
-              />
-            ))}
-          </View>
+              <View style={styles.pagination}>
+                {historyRecords.map((record, index) => (
+                  <View
+                    key={`${record.dateKey}-dot`}
+                    style={[styles.dot, activeIndex === index && styles.activeDot]}
+                  />
+                ))}
+              </View>
+            </>
+          ) : (
+            <View style={styles.emptyHistory}>
+              <Text style={styles.emptyHistoryText}>
+                {historyLoading
+                  ? "완성된 카드를 확인하고 있어요."
+                  : "완성된 캐스팅 카드가 아직 없어요."}
+              </Text>
+            </View>
+          )}
         </ScrollView>
         <NotificationSheet
           visible={notificationVisible}
@@ -1037,6 +1086,19 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
+  },
+  emptyHistory: {
+    minHeight: vs(500),
+    paddingTop: vs(185),
+    paddingHorizontal: ms(36),
+    alignItems: "center",
+  },
+  emptyHistoryText: {
+    color: "rgba(255, 208, 160, 0.72)",
+    fontFamily: "NanumSquareNeo",
+    fontSize: ms(13),
+    lineHeight: ms(20),
+    textAlign: "center",
   },
   dot: {
     width: ms(8),
