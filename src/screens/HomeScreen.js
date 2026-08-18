@@ -39,6 +39,7 @@ import { notifyFavoriteChanged, subscribeFavoriteChanges } from "../services/fav
 import { findNavigationWithRoute } from "../services/flowNavigation";
 import {
   hasCompleteCastingImage,
+  resolveLatestCompleteCastingBefore,
   resolveTodayCastingTarget,
 } from "../services/todayCastingResolver";
 
@@ -54,6 +55,7 @@ const COPY = {
   cardHelp:
     "AI\uAC00 \uB2F9\uC2E0\uC5D0\uAC8C \uC5B4\uC6B8\uB9AC\uB294 \uBC30\uC5ED\uC744 \uCC3E\uC544\uC918\uC694.",
   cta: "\uC9C0\uAE08 \uAE30\uB85D\uD558\uAE30",
+  todayCta: "\uC0C8\uB85C\uC6B4 \uD558\uB8E8 \uCE90\uC2A4\uD305 \uBC1B\uAE30",
   resultEyebrow: "\u2726  CASTING RESULT  \u2726",
   resultTitle: "\uB530\uB73B\uD55C \uBC24\uC758\n\uC8FC\uC778\uACF5",
   resultGenre: "\uC624\uB298\uC758 \uC7A5\uB974",
@@ -70,6 +72,20 @@ const pickFirst = (...values) =>
   values.find((value) => value !== undefined && value !== null && value !== "");
 
 const formatDisplayDate = (dateKey) => dateKey.replaceAll("-", ".");
+
+const getRelativeDateKey = (offsetDays) => {
+  const now = new Date();
+  const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() + offsetDays);
+
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
+    date.getDate()
+  ).padStart(2, "0")}`;
+};
+
+const isCarryoverWindow = () => new Date().getHours() < 12;
+
+const canShowCarryoverCard = (recordDate) =>
+  isCarryoverWindow() && recordDate === getRelativeDateKey(-1);
 
 const normalizeHomeResult = (casting, fallbackRecordId) => {
   if (!casting || typeof casting !== "object") {
@@ -110,23 +126,32 @@ export default function HomeScreen({ navigation, route }) {
   const [todayState, setTodayState] = useState(() => getTodayRecordState());
   const [homeResult, setHomeResult] = useState(null);
   const [todayScreen, setTodayScreen] = useState(null);
+  const [clockRefreshKey, setClockRefreshKey] = useState(0);
   const [notificationVisible, setNotificationVisible] = useState(false);
   const [notificationState, setNotificationState] = useState(() =>
     getNotificationState()
   );
   const resultCard = useMemo(
-    () =>
-      homeResult ??
-      normalizeHomeResult(route?.params?.result) ??
-      normalizeHomeResult(todayState.resultData),
+    () => {
+      const routeResult = normalizeHomeResult(route?.params?.result);
+
+      return (
+        homeResult ??
+        (routeResult?.recordDate === getTodayDateKey() ? routeResult : null) ??
+        normalizeHomeResult(todayState.resultData)
+      );
+    },
     [homeResult, route?.params?.result, todayState.resultData]
   );
   const statusAllowsResult =
     todayScreen === null ? todayState.resultReady : todayScreen === "RESULT";
+  const resultCardDate = resultCard?.recordDate ?? null;
+  const resultCardIsToday = resultCardDate === getTodayDateKey();
+  const resultCardIsCarryover = !resultCardIsToday && canShowCarryoverCard(resultCardDate);
   const hasResultCard =
-    statusAllowsResult &&
     Boolean(resultCard) &&
-    hasCompleteCastingImage(resultCard);
+    hasCompleteCastingImage(resultCard) &&
+    (resultCardIsToday ? statusAllowsResult : resultCardIsCarryover);
   const resultRows = useMemo(
     () => [
       { icon: "movie-open-outline", label: "오늘의 장르", text: resultCard?.genre },
@@ -199,6 +224,24 @@ export default function HomeScreen({ navigation, route }) {
 
   useEffect(() => subscribeNotificationState(setNotificationState), []);
   useEffect(() => subscribeTodayRecordState(setTodayState), []);
+  useEffect(() => {
+    const now = new Date();
+    const nextBoundary = new Date(now);
+
+    if (now.getHours() < 12) {
+      nextBoundary.setHours(12, 0, 1, 0);
+    } else {
+      nextBoundary.setDate(nextBoundary.getDate() + 1);
+      nextBoundary.setHours(0, 0, 1, 0);
+    }
+
+    const timer = setTimeout(
+      () => setClockRefreshKey((current) => current + 1),
+      Math.max(1000, nextBoundary.getTime() - now.getTime())
+    );
+
+    return () => clearTimeout(timer);
+  }, [clockRefreshKey]);
   useEffect(
     () =>
       subscribeFavoriteChanges(({ recordId, isFavorite }) => {
@@ -229,7 +272,39 @@ export default function HomeScreen({ navigation, route }) {
         setTodayScreen(target.screen ?? null);
 
         if (target.screen !== "RESULT" || !target.casting) {
-          setHomeResult(null);
+          setTodayResultReady(false);
+
+          if (!isCarryoverWindow()) {
+            setHomeResult(null);
+            return;
+          }
+
+          try {
+            const fallback = await resolveLatestCompleteCastingBefore(getTodayDateKey());
+
+            if (!active) {
+              return;
+            }
+
+            const normalized = normalizeHomeResult(fallback?.casting, fallback?.recordId);
+            const shouldShowFallback = canShowCarryoverCard(fallback?.recordDate);
+
+            setHomeResult(
+              normalized && shouldShowFallback
+                ? {
+                    ...normalized,
+                    recordDate: fallback.recordDate,
+                  }
+                : null
+            );
+          } catch (fallbackError) {
+            console.warn("[HomeScreen] failed to load recent casting:", {
+              statusCode: fallbackError?.response?.status,
+              data: fallbackError?.response?.data,
+              message: fallbackError?.message,
+            });
+            setHomeResult(null);
+          }
           return;
         }
 
@@ -260,10 +335,15 @@ export default function HomeScreen({ navigation, route }) {
       active = false;
       unsubscribeFocus?.();
     };
-  }, [navigation]);
+  }, [navigation, clockRefreshKey]);
 
   const goResult = () => {
     if (!resultCard) {
+      return;
+    }
+
+    if (!resultCardIsToday) {
+      goInput();
       return;
     }
 
@@ -353,7 +433,7 @@ export default function HomeScreen({ navigation, route }) {
             <TouchableOpacity
               activeOpacity={0.92}
               style={styles.resultCastingCard}
-              onPress={goResult}
+              onPress={resultCardIsToday ? goResult : goInput}
             >
               <View style={styles.resultCastingCardInner}>
                 <CastingCardFront
@@ -368,6 +448,21 @@ export default function HomeScreen({ navigation, route }) {
                   showFlipButton={false}
                 />
               </View>
+              {!resultCardIsToday && (
+                <View style={styles.carryoverCtaButton}>
+                  <MaterialCommunityIcons
+                    name="pencil"
+                    size={responsive.ctaIconSize}
+                    color="#FFBF80"
+                  />
+                  <Text style={styles.carryoverCtaText}>{COPY.todayCta}</Text>
+                  <Ionicons
+                    name="arrow-forward"
+                    size={responsive.arrowIconSize}
+                    color="#FFBF80"
+                  />
+                </View>
+              )}
             </TouchableOpacity>
           ) : (
           <View style={styles.card}>
@@ -493,12 +588,12 @@ const createStyles = (screenWidth, screenHeight, insets) => {
   const cardScale = cardWidth / 367;
   const cs = (value) => value * cardScale;
   const ctaHeight = cardHeight * (72 / 584);
-  const resultBaseWidth = ms(284);
+  const resultBaseWidth = ms(312);
   const resultBaseHeight = ms(484);
   const resultCardScale = Math.min(
     cardWidth / resultBaseWidth,
     cardHeight / resultBaseHeight,
-    1.18
+    1.3
   );
 
   const styles = StyleSheet.create({
@@ -587,7 +682,37 @@ const createStyles = (screenWidth, screenHeight, insets) => {
   resultCastingCardInner: {
     width: resultBaseWidth,
     height: resultBaseHeight,
+    position: "relative",
+    overflow: "hidden",
     transform: [{ scale: resultCardScale }],
+  },
+
+  carryoverCtaButton: {
+    position: "absolute",
+    left: Math.max(24, resultBaseWidth * resultCardScale * 0.12),
+    right: Math.max(24, resultBaseWidth * resultCardScale * 0.12),
+    bottom: Math.max(24, resultBaseHeight * resultCardScale * 0.055),
+    height: Math.max(46, ctaHeight * 0.82),
+    borderRadius: Math.max(23, ctaHeight * 0.41),
+    borderWidth: 1,
+    borderColor: "rgba(255, 174, 105, 0.78)",
+    backgroundColor: "rgba(37, 17, 62, 0.88)",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#FF8C55",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.22,
+    shadowRadius: 12,
+    elevation: 12,
+  },
+
+  carryoverCtaText: {
+    marginHorizontal: cs(11),
+    color: "#FFBF80",
+    fontFamily: "NanumSquareNeo",
+    fontSize: cs(16),
+    lineHeight: cs(24),
   },
 
   cardArtwork: {

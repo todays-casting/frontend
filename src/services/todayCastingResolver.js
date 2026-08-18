@@ -28,8 +28,6 @@ export const hasCompleteCastingImage = (casting) =>
       (casting.hasGeneratedImageUrl || casting.imageKey)
   );
 
-const toYearMonth = (dateKey) => dateKey.slice(0, 7);
-
 const resolveCastingForRecord = async (recordId, recordDate) => {
   if (!recordId) {
     return null;
@@ -45,11 +43,28 @@ const resolveCastingForRecord = async (recordId, recordDate) => {
   };
 };
 
-const resolveLatestCompleteCastingFromMarkers = async (dateKey) => {
-  const markers = await calendarApi.getMonthlyMarkers(toYearMonth(dateKey));
+const toYearMonth = (dateKey) => dateKey.slice(0, 7);
+
+const getPreviousYearMonth = (dateKey) => {
+  const [year, month] = dateKey.split("-").map(Number);
+  const date = new Date(year, month - 2, 1);
+
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+};
+
+export const resolveLatestCompleteCastingBefore = async (dateKey = getTodayDateKey()) => {
+  const yearMonths = [
+    toYearMonth(dateKey),
+    getPreviousYearMonth(dateKey),
+  ];
+
+  const markerGroups = await Promise.all(
+    [...new Set(yearMonths)].map((yearMonth) => calendarApi.getMonthlyMarkers(yearMonth))
+  );
   const candidateDates = [...new Set(
-    markers
-      .filter((marker) => marker?.hasRecord && marker.recordDate <= dateKey)
+    markerGroups
+      .flat()
+      .filter((marker) => marker?.hasRecord && marker.recordDate < dateKey)
       .map((marker) => marker.recordDate)
   )].sort((a, b) => b.localeCompare(a));
 
@@ -104,16 +119,6 @@ export const resolveTodayCastingTarget = async () => {
         screen: "WAITING",
       };
     }
-  }
-
-  const fallback = await resolveLatestCompleteCastingFromMarkers(todayKey);
-
-  if (fallback) {
-    return {
-      ...fallback,
-      status,
-      screen: "RESULT",
-    };
   }
 
   return {

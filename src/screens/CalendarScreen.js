@@ -40,6 +40,8 @@ const CALENDAR_CARD_PATH =
 const CASTING_CARD_PATH =
   "M31 1 H174 C179 14 188 21 202 21 C216 21 225 14 230 1 H373 C383 1 390 8 390 18 C399 19 404 26 404 36 V555 C404 565 398 571 388 571 C388 579 381 583 372 583 H32 C23 583 16 579 16 571 C6 571 0 565 0 555 V36 C0 26 6 20 14 18 C14 8 21 1 31 1 Z";
 const CASTING_CARD_BACKGROUND = require("../../assets/images/casting-card-sunset-background-v2.jpg");
+const EMPTY_PAST_DAY_QUOTE = "아직 이 날의 장면은 비어 있어요.";
+const EMPTY_FUTURE_DAY_QUOTE = "다가올 캐스팅을 기다려주세요.";
 
 const DAYS = ["일", "월", "화", "수", "목", "금", "토"];
 const toDateKey = (date) =>
@@ -66,7 +68,7 @@ const hasCompleteCastingImage = (casting) =>
       typeof casting.imageUrl === "string" &&
       casting.imageUrl.trim().length > 0 &&
       !isPlaceholderImageUrl(casting.imageUrl) &&
-      (casting.hasGeneratedImageUrl || casting.imageKey)
+      (casting.hasGeneratedImage || casting.hasGeneratedImageUrl || casting.imageKey)
   );
 
 const createCalendarDays = (year, month, today) => {
@@ -121,6 +123,7 @@ export default function CalendarScreen({ navigation }) {
   const [recordError, setRecordError] = useState("");
   const [futureDateModalVisible, setFutureDateModalVisible] = useState(false);
   const [activeDateOneLineComment, setActiveDateOneLineComment] = useState("");
+  const [activeDateImageUrl, setActiveDateImageUrl] = useState("");
   const [recordLoading, setRecordLoading] = useState(false);
   const [favoriteLoading, setFavoriteLoading] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState(null);
@@ -163,6 +166,13 @@ export default function CalendarScreen({ navigation }) {
   const selectedDateKey = selectedDate ? toDateKey(selectedDate) : null;
   const activeDateKey = toDateKey(activeDate);
   const activeDateHasRecord = recordDates.has(activeDateKey);
+  const emptyDayQuote = isFutureDateKey(activeDateKey)
+    ? EMPTY_FUTURE_DAY_QUOTE
+    : EMPTY_PAST_DAY_QUOTE;
+  const quoteImageSource =
+    activeDateHasRecord && activeDateImageUrl
+      ? { uri: activeDateImageUrl }
+      : QUOTE_BACKGROUND;
   const markedDateKey =
     visibleMonth.getFullYear() === activeDate.getFullYear() &&
     visibleMonth.getMonth() === activeDate.getMonth()
@@ -234,6 +244,7 @@ export default function CalendarScreen({ navigation }) {
     const loadActiveDateComment = async () => {
       if (!activeDateHasRecord) {
         setActiveDateOneLineComment("");
+        setActiveDateImageUrl("");
         return;
       }
 
@@ -241,7 +252,10 @@ export default function CalendarScreen({ navigation }) {
         const record = await recordsApi.getRecordByDate(activeDateKey);
 
         if (!record?.id || record.status !== "COMPLETED") {
-          if (active) setActiveDateOneLineComment("");
+          if (active) {
+            setActiveDateOneLineComment("");
+            setActiveDateImageUrl("");
+          }
           return;
         }
 
@@ -249,9 +263,13 @@ export default function CalendarScreen({ navigation }) {
 
         if (active) {
           setActiveDateOneLineComment(casting?.oneLineComment ?? "");
+          setActiveDateImageUrl(hasCompleteCastingImage(casting) ? casting.imageUrl : "");
         }
       } catch {
-        if (active) setActiveDateOneLineComment("");
+        if (active) {
+          setActiveDateOneLineComment("");
+          setActiveDateImageUrl("");
+        }
       }
     };
 
@@ -823,10 +841,11 @@ export default function CalendarScreen({ navigation }) {
 
             <View style={styles.quoteCard}>
               <Image
-                source={QUOTE_BACKGROUND}
+                source={quoteImageSource}
                 style={styles.quoteImage}
                 resizeMode="cover"
               />
+              <View style={styles.quoteScrim} />
               <View style={styles.quoteDate}>
               <Text style={styles.quoteDateText}>
                 {activeDate.getMonth() + 1}.{activeDate.getDate()}
@@ -836,11 +855,11 @@ export default function CalendarScreen({ navigation }) {
               </Text>
             </View>
             <View style={styles.quoteDivider} />
-            {activeDateHasRecord && activeDateOneLineComment ? (
-              <Text style={styles.quoteText}>
-                “{activeDateOneLineComment}”
-              </Text>
-            ) : null}
+            <Text style={styles.quoteText}>
+              {activeDateHasRecord && activeDateOneLineComment
+                ? `“${activeDateOneLineComment}”`
+                : emptyDayQuote}
+            </Text>
             </View>
 
           <View style={styles.recordCard}>
@@ -1453,6 +1472,11 @@ const styles = StyleSheet.create({
     left: 0,
     width: "100%",
     height: "100%",
+    zIndex: 0,
+  },
+  quoteScrim: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(30, 10, 48, 0.34)",
     zIndex: 0,
   },
   quoteDate: {
