@@ -17,12 +17,17 @@ import {
   ContactScreen,
   SettingsScreen,
 } from "./src/screens/MyPageDetailScreen";
+import { hydrateAccessToken } from "./src/api/client";
 import { registerForPushNotificationsAsync } from "./src/services/notifications";
 
 const Stack = createNativeStackNavigator();
 
 export default function App() {
   useEffect(() => {
+    hydrateAccessToken().catch((error) => {
+      console.warn("Failed to hydrate access token:", error);
+    });
+
     registerForPushNotificationsAsync().catch((error) => {
       console.warn("Failed to register push notifications:", error);
     });

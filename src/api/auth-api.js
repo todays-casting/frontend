@@ -3,8 +3,13 @@ import {
   stopPushTokenSync,
   syncPushTokenWithServer,
 } from "../services/notifications";
+import {
+  clearTodayRecordSession,
+  setTodayRecordStateScope,
+} from "../services/todayRecordState";
 
 const publicRequestConfig = {
+  skipAuth: true,
   headers: {
     Authorization: undefined,
   },
@@ -15,6 +20,15 @@ const syncNotificationsAfterAuth = () => {
     console.warn("Failed to sync push token:", error);
   });
 };
+
+const getAuthScope = (fallback, data) =>
+  data?.userId ??
+  data?.id ??
+  data?.memberId ??
+  data?.email ??
+  data?.user?.id ??
+  data?.member?.id ??
+  fallback;
 
 const signUpStepOne = async ({ email, password, passwordConfirm }) => {
   const response = await client.post(
@@ -34,6 +48,7 @@ const signUpStepTwo = async ({ userId, nickname, age, gender }) => {
   );
 
   setAccessToken(response.data.accessToken);
+  setTodayRecordStateScope(getAuthScope(userId, response.data));
   syncNotificationsAfterAuth();
   return response.data;
 };
@@ -46,6 +61,7 @@ const login = async ({ email, password }) => {
   );
 
   setAccessToken(response.data.accessToken);
+  setTodayRecordStateScope(getAuthScope(email.trim(), response.data));
   syncNotificationsAfterAuth();
   return response.data;
 };
@@ -59,6 +75,7 @@ const kakaoLogin = async ({ accessToken }) => {
 
   if (!response.data.isNewUser && response.data.accessToken) {
     setAccessToken(response.data.accessToken);
+    setTodayRecordStateScope(getAuthScope(accessToken, response.data));
     syncNotificationsAfterAuth();
   }
 
@@ -88,11 +105,13 @@ const changePassword = async ({ currentPassword, newPassword, newPasswordConfirm
     newPasswordConfirm,
   });
   setAccessToken(null);
+  clearTodayRecordSession();
   stopPushTokenSync();
 };
 
 const logout = () => {
   setAccessToken(null);
+  clearTodayRecordSession();
   stopPushTokenSync();
 };
 

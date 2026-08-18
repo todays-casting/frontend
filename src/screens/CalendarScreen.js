@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   Animated,
   Image,
@@ -17,7 +17,6 @@ import {
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import { Image as ExpoImage } from "expo-image";
 import Svg, {
   ClipPath,
   Defs,
@@ -29,6 +28,7 @@ import calendarApi from "../api/calendar-api";
 import castingsApi from "../api/castings-api";
 import recordsApi from "../api/records-api";
 import { useUser } from "../contexts/UserContext";
+import { notifyFavoriteChanged, subscribeFavoriteChanges } from "../services/favoriteState";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const scale = Math.min(Math.max(SCREEN_WIDTH / 393, 0.82), 1.15);
@@ -151,7 +151,11 @@ export default function CalendarScreen({ navigation }) {
       : null;
   const selectedCardRecord = selectedCasting
     ? {
-        title: selectedCasting.highlight || selectedCasting.characterPhrase,
+        title:
+          selectedCasting.roleName ||
+          selectedCasting.characterName ||
+          selectedCasting.role ||
+          selectedCasting.castingTitle,
         genre: selectedCasting.genre,
         role: selectedCasting.roleName,
         scene: selectedCasting.scenePhrase,
@@ -199,6 +203,40 @@ export default function CalendarScreen({ navigation }) {
       active = false;
     };
   }, [yearMonth]);
+
+  useEffect(
+    () =>
+      subscribeFavoriteChanges(({ recordId, dateKey, isFavorite }) => {
+        if (!dateKey || typeof isFavorite !== "boolean") {
+          return;
+        }
+
+        setFavoriteDates((current) => {
+          const next = new Set(current);
+
+          if (isFavorite) {
+            next.add(dateKey);
+          } else {
+            next.delete(dateKey);
+          }
+
+          return next;
+        });
+        setMonthlyMarkers((current) =>
+          current.map((marker) =>
+            marker.recordDate === dateKey ? { ...marker, isFavorite } : marker
+          )
+        );
+        setSelectedCasting((current) => {
+          const currentRecordId = current?.dailyRecordId ?? selectedRecord?.id;
+
+          return String(currentRecordId) === String(recordId)
+            ? { ...current, isFavorite }
+            : current;
+        });
+      }),
+    [selectedRecord?.id]
+  );
 
   const frontRotate = flip.interpolate({
     inputRange: [0, 1],
@@ -338,8 +376,50 @@ export default function CalendarScreen({ navigation }) {
     setIsMonthPickerOpen(false);
   };
 
-  const goToRecordInput = () => {
-    navigation?.navigate?.("Input");
+  const goToRecordInput = async () => {
+    const dateKey = activeDateKey;
+
+    if (!recordDates.has(dateKey)) {
+      navigation?.navigate?.("DailyRecord");
+      return;
+    }
+
+    try {
+      setRecordLoading(true);
+      setRecordError("");
+      const record = await recordsApi.getRecordByDate(dateKey);
+
+      if (!record?.id || record.status !== "COMPLETED") {
+        navigation?.navigate?.("DailyRecord");
+        return;
+      }
+
+      const casting = await castingsApi.getCastingByRecordId(record.id);
+
+      const params = {
+        recordId: record.id,
+        result: {
+          ...casting,
+          recordId: record.id,
+        },
+      };
+      const rootNavigation = navigation?.getParent?.();
+
+      if (rootNavigation) {
+        rootNavigation.navigate("Main", {
+          screen: "Result",
+          params,
+        });
+      } else {
+        navigation?.navigate?.("Result", params);
+      }
+    } catch (error) {
+      setRecordError(
+        error.response?.data?.message ?? "선택한 날짜의 결과를 불러오지 못했습니다."
+      );
+    } finally {
+      setRecordLoading(false);
+    }
   };
 
   const toggleFavorite = async () => {
@@ -369,6 +449,11 @@ export default function CalendarScreen({ navigation }) {
         }
 
         return next;
+      });
+      notifyFavoriteChanged({
+        recordId,
+        dateKey: selectedDateKey,
+        isFavorite: updatedCasting.isFavorite,
       });
     } catch (error) {
       setRecordError(
@@ -718,37 +803,23 @@ export function CastingCardFront({
   record = RECORD,
   eyebrow = "TODAY’S CASTING",
   rows,
+  showInfoPanel = true,
+  showFlipButton = true,
 }) {
-  const [remoteImageReady, setRemoteImageReady] = useState(false);
+  const reactId = useId();
+  const clipPathId = useMemo(
+    () => `castingCardClip-${String(reactId).replace(/[^a-zA-Z0-9_-]/g, "")}`,
+    [reactId]
+  );
+  const [remoteImageFailed, setRemoteImageFailed] = useState(false);
   const imageUrl =
     typeof record.imageUrl === "string" ? record.imageUrl.trim() : "";
 
   useEffect(() => {
-    let active = true;
-    setRemoteImageReady(false);
-
-    if (!imageUrl) {
-      return () => {
-        active = false;
-      };
-    }
-
-    ExpoImage.prefetch(imageUrl, "memory-disk")
-      .then((loaded) => {
-        if (active) {
-          setRemoteImageReady(loaded);
-        }
-      })
-      .catch(() => {
-        if (active) {
-          setRemoteImageReady(false);
-        }
-      });
-
-    return () => {
-      active = false;
-    };
+    setRemoteImageFailed(false);
   }, [imageUrl]);
+  const cardImageSource =
+    imageUrl && !remoteImageFailed ? imageUrl : CASTING_CARD_BACKGROUND;
 
   const infoRows = rows ?? [
     { icon: "movie-open-outline", label: "오늘의 장르", text: record.genre },
@@ -768,19 +839,19 @@ export function CastingCardFront({
         style={styles.frontArtwork}
       >
         <Defs>
-          <ClipPath id="castingCardClip">
+          <ClipPath id={clipPathId}>
             <Path d={CASTING_CARD_PATH} />
           </ClipPath>
         </Defs>
         <SvgImage
-          href={remoteImageReady ? { uri: imageUrl } : CASTING_CARD_BACKGROUND}
+          href={cardImageSource}
           x="0"
           y="0"
           width="404"
           height="584"
           preserveAspectRatio="xMidYMid slice"
-          clipPath="url(#castingCardClip)"
-          onError={() => setRemoteImageReady(false)}
+          clipPath={`url(#${clipPathId})`}
+          onError={() => setRemoteImageFailed(true)}
         />
         <Rect
           x="0"
@@ -788,7 +859,7 @@ export function CastingCardFront({
           width="404"
           height="584"
           fill="rgba(25, 9, 43, 0.12)"
-          clipPath="url(#castingCardClip)"
+          clipPath={`url(#${clipPathId})`}
         />
         <Path
           d={CASTING_CARD_PATH}
@@ -813,20 +884,24 @@ export function CastingCardFront({
         />
       </TouchableOpacity>
 
-      <View style={styles.infoPanel}>
-        {infoRows.map((row, index) => (
-          <InfoRow
-            key={`${row.label}-${index}`}
-            {...row}
-            last={index === infoRows.length - 1}
-          />
-        ))}
+      {showInfoPanel && (
+        <View style={styles.infoPanel}>
+          {infoRows.map((row, index) => (
+            <InfoRow
+              key={`${row.label}-${index}`}
+              {...row}
+              last={index === infoRows.length - 1}
+            />
+          ))}
 
-        <TouchableOpacity activeOpacity={0.82} style={styles.flipButton} onPress={onFlip}>
-          <Text style={styles.flipButtonText}>뒷면 보기</Text>
-          <Ionicons name="arrow-forward" size={ms(22)} color="#FF8D4C" />
-        </TouchableOpacity>
-      </View>
+          {showFlipButton && (
+            <TouchableOpacity activeOpacity={0.82} style={styles.flipButton} onPress={onFlip}>
+              <Text style={styles.flipButtonText}>뒷면 보기</Text>
+              <Ionicons name="arrow-forward" size={ms(22)} color="#FF8D4C" />
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
     </>
   );
 }

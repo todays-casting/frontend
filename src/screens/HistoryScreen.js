@@ -16,10 +16,16 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import NotificationSheet from "../components/NotificationSheet";
+import {
+  getNotificationState,
+  markAllNotificationsRead,
+  subscribeNotificationState,
+} from "../services/notificationState";
 import { CastingCardBack, CastingCardFront } from "./CalendarScreen";
 import calendarApi from "../api/calendar-api";
 import castingsApi from "../api/castings-api";
 import recordsApi from "../api/records-api";
+import { notifyFavoriteChanged, subscribeFavoriteChanges } from "../services/favoriteState";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const scale = Math.min(Math.max(SCREEN_WIDTH / 393, 0.82), 1.15);
@@ -172,6 +178,9 @@ export default function HistoryScreen({ navigation }) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [backVisible, setBackVisible] = useState(false);
   const [notificationVisible, setNotificationVisible] = useState(false);
+  const [notificationState, setNotificationState] = useState(() =>
+    getNotificationState()
+  );
   const [favoriteDates, setFavoriteDates] = useState(() => new Set());
   const [favoriteLoadingRecordId, setFavoriteLoadingRecordId] = useState(null);
   const scrollRef = useRef(null);
@@ -180,6 +189,36 @@ export default function HistoryScreen({ navigation }) {
   const isDraggingRef = useRef(false);
   const scrollX = useRef(new Animated.Value(activeIndex * SNAP)).current;
   const flip = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => subscribeNotificationState(setNotificationState), []);
+  useEffect(
+    () =>
+      subscribeFavoriteChanges(({ recordId, dateKey, isFavorite }) => {
+        if (typeof isFavorite !== "boolean") {
+          return;
+        }
+
+        setHistoryRecords((current) =>
+          current.map((item) =>
+            String(item.recordId) === String(recordId)
+              ? { ...item, liked: isFavorite }
+              : item
+          )
+        );
+
+        if (dateKey) {
+          setFavoriteDates((current) => {
+            const next = new Set(current);
+
+            if (isFavorite) next.add(dateKey);
+            else next.delete(dateKey);
+
+            return next;
+          });
+        }
+      }),
+    []
+  );
 
   const weekLabel = historyLoading
     ? "히스토리를 불러오는 중..."
@@ -227,7 +266,7 @@ export default function HistoryScreen({ navigation }) {
               date: formatCardDate(recordDate),
               dateKey: recordDate,
               day: ["일", "월", "화", "수", "목", "금", "토"][date.getDay()],
-              title: casting.highlight || casting.characterPhrase,
+              title: casting.roleName || casting.characterName || casting.role || casting.castingTitle,
               genre: casting.genre,
               emotion: casting.additionalMood?.join(" · ") || "",
               line: casting.oneLineComment,
@@ -366,6 +405,11 @@ export default function HistoryScreen({ navigation }) {
         else next.delete(record.dateKey);
         return next;
       });
+      notifyFavoriteChanged({
+        recordId: record.recordId,
+        dateKey: record.dateKey,
+        isFavorite: updatedCasting.isFavorite,
+      });
     } catch (error) {
       setHistoryError(
         error.response?.data?.message ?? error.message ?? "즐겨찾기 변경에 실패했습니다."
@@ -465,6 +509,7 @@ export default function HistoryScreen({ navigation }) {
               onPress={() => setNotificationVisible(true)}
             >
               <Ionicons name="notifications-outline" size={ms(31)} color="#FFB15D" />
+              {notificationState.hasUnread && <View style={styles.bellDot} />}
             </TouchableOpacity>
           </View>
 
@@ -616,7 +661,9 @@ export default function HistoryScreen({ navigation }) {
         </ScrollView>
         <NotificationSheet
           visible={notificationVisible}
+          notifications={notificationState.notifications}
           onClose={() => setNotificationVisible(false)}
+          onMarkAllRead={markAllNotificationsRead}
         />
         <Modal
           visible={datePickerVisible}
@@ -739,7 +786,7 @@ function HistoryCardFront({
   onShowBack,
 }) {
   const rows = [
-    { icon: "heart-outline", label: "오늘의 감정", text: record.emotion },
+    { icon: "movie-open-outline", label: "오늘의 장르", text: record.genre },
     { icon: "pencil-outline", label: "오늘의 한줄 기록", text: record.line },
     { icon: "image-outline", label: "기억에 남은 장면", text: record.scene },
   ];
@@ -749,7 +796,7 @@ function HistoryCardFront({
       <CastingCardFront
         date={record.date}
         record={record}
-        eyebrow="TODAY’S GENRE"
+        eyebrow="TODAY’S CASTING"
         rows={rows}
         isFavorite={isFavorite}
         onToggleFavorite={onToggleFavorite}
@@ -836,6 +883,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginTop: ms(40),
+  },
+  bellDot: {
+    position: "absolute",
+    right: ms(8),
+    top: ms(7),
+    width: ms(6),
+    height: ms(6),
+    borderRadius: ms(5),
+    backgroundColor: "#FF7746",
   },
   weekPicker: {
     alignSelf: "center",

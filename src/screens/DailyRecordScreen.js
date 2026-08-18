@@ -18,9 +18,11 @@ import {
   getTodayDateKey,
   getTodayRecordState,
   setResultNoticeHidden,
+  setTodayResultReady,
   subscribeTodayRecordState,
 } from "../services/todayRecordState";
 import recordsApi from "../api/records-api";
+import castingsApi from "../api/castings-api";
 
 const CUSTOM_LIMIT = 10;
 
@@ -36,6 +38,20 @@ const COPY = {
   optional: "선택",
   cta: "캐스팅 결과 받기",
   customPlaceholder: "최대 10자로 입력해주세요",
+};
+
+const findNavigationWithRoute = (navigation, routeName) => {
+  let currentNavigation = navigation;
+
+  while (currentNavigation) {
+    if (currentNavigation.getState?.().routeNames?.includes(routeName)) {
+      return currentNavigation;
+    }
+
+    currentNavigation = currentNavigation.getParent?.();
+  }
+
+  return null;
 };
 
 const EMOTIONS = [
@@ -126,7 +142,7 @@ export default function DailyRecordScreen({ navigation }) {
   };
 
   const goAnalysisLoading = () => {
-    const rootNavigation = navigation.getParent?.();
+    const rootNavigation = findNavigationWithRoute(navigation, "AnalysisLoading");
 
     if (rootNavigation) {
       rootNavigation.navigate("AnalysisLoading");
@@ -145,16 +161,49 @@ export default function DailyRecordScreen({ navigation }) {
     goAnalysisLoading();
   };
 
-  const startAnalysis = () => {
-    const rootNavigation = navigation.getParent?.();
+  const startAnalysis = async () => {
+    const rootNavigation = findNavigationWithRoute(navigation, "Main");
 
     if (resultReady) {
+      try {
+        const status = await recordsApi.getTodayStatus();
+        const recordId =
+          status?.dailyRecordId ??
+          status?.recordId ??
+          status?.record?.id ??
+          status?.dailyRecord?.id ??
+          status?.id;
+
+        if (status?.screen === "RESULT" && recordId) {
+          const casting = await castingsApi.getCastingByRecordId(recordId);
+          const result = normalizeCastingResultForApi(casting, recordId);
+
+          setTodayResultReady(true, result);
+          navigateResultForApi(recordId, result);
+          return;
+        }
+
+        if (status?.screen === "WAITING") {
+          goAnalysisLoadingForApi(recordId);
+          return;
+        }
+      } catch (error) {
+        console.warn("Failed to open existing result:", error);
+      }
+
       if (rootNavigation) {
-        rootNavigation.navigate("Result");
+        rootNavigation.navigate("Main", {
+          screen: "Result",
+          params: {
+            result: getTodayRecordState().resultData,
+          },
+        });
         return;
       }
 
-      navigation.navigate("Result");
+      navigation.navigate("Result", {
+        result: getTodayRecordState().resultData,
+      });
       return;
     }
 
@@ -240,9 +289,192 @@ export default function DailyRecordScreen({ navigation }) {
     }
   };
 
-  const navigateAnalysisLoadingForApi = (recordId) => {
-    const rootNavigation = navigation.getParent?.();
-    const params = recordId ? { recordId } : undefined;
+  const pickFirst = (...values) =>
+    values.find((value) => value !== undefined && value !== null && value !== "");
+
+  const parseJsonTextForApi = (value) => {
+    if (typeof value !== "string") {
+      return null;
+    }
+
+    try {
+      return JSON.parse(value);
+    } catch {
+      return null;
+    }
+  };
+
+  const normalizeImageUrlForApi = (value) => {
+    if (typeof value !== "string") {
+      return "";
+    }
+
+    const trimmed = value.trim();
+
+    if (!trimmed) {
+      return "";
+    }
+
+    if (trimmed.startsWith("data:image/")) {
+      return trimmed;
+    }
+
+    if (/^[A-Za-z0-9+/=]+$/.test(trimmed) && trimmed.length > 200) {
+      return `data:image/png;base64,${trimmed}`;
+    }
+
+    if (/^https?:\/\//.test(trimmed)) {
+      return trimmed;
+    }
+
+    if (trimmed.startsWith("/") && process.env.EXPO_PUBLIC_API_URL) {
+      return `${process.env.EXPO_PUBLIC_API_URL.replace(/\/$/, "")}${trimmed}`;
+    }
+
+    return trimmed;
+  };
+
+  const normalizeCastingResultForApi = (casting, recordId) => {
+    const baseSource =
+      casting?.casting ??
+      casting?.castingCard ??
+      casting?.castingResult ??
+      casting?.result ??
+      casting ??
+      {};
+    const source = {
+      ...(parseJsonTextForApi(baseSource.rawResponse) ?? {}),
+      ...baseSource,
+    };
+
+    return {
+      recordId:
+        pickFirst(source.dailyRecordId, source.recordId, casting?.dailyRecordId, casting?.recordId) ??
+        recordId,
+      userName: pickFirst(source.userName, source.nickname, source.name),
+      title: pickFirst(
+        source.title,
+        source.roleName,
+        source.role,
+        source.characterName,
+        source.character,
+        source.castingTitle
+      ),
+      genre: pickFirst(source.genre, source.movieGenre, source.todayGenre),
+      role: pickFirst(source.roleName, source.role, source.characterName),
+      line: pickFirst(
+        source.oneLineComment,
+        source.line,
+        source.quote,
+        source.summary,
+        source.description
+      ),
+      scene: pickFirst(
+        source.scenePhrase,
+        source.scene,
+        source.memorableScene,
+        source.sceneDescription,
+        source.situation
+      ),
+      imageUrl: normalizeImageUrlForApi(
+        pickFirst(
+          source.imageUrl,
+          source.imageURL,
+          source.image_url,
+          source.generatedImageUrl,
+          source.generatedImageURL,
+          source.generatedImage,
+          source.posterUrl,
+          source.posterImageUrl,
+          source.castingImageUrl,
+          source.cardImageUrl,
+          source.cardImage,
+          source.image,
+          source.imagePath,
+          source.imageBase64,
+          source.base64Image,
+          source.imageData
+        )
+      ),
+      imageKey: pickFirst(
+        source.imageKey,
+        source.image_key,
+        source.generatedImageKey,
+        source.generated_image_key,
+        source.generatedImageId,
+        source.generated_image_id,
+        typeof source.castingImageId === "string" ? source.castingImageId : null,
+        casting?.imageKey,
+        casting?.image_key,
+        casting?.generatedImageKey,
+        casting?.generated_image_key,
+        casting?.generatedImageId,
+        casting?.generated_image_id,
+        typeof casting?.castingImageId === "string" ? casting.castingImageId : null
+      ),
+      hasGeneratedImageUrl: Boolean(source.hasGeneratedImageUrl ?? casting?.hasGeneratedImageUrl),
+      hasResolvedCastingImage: Boolean(
+        source.hasResolvedCastingImage ?? casting?.hasResolvedCastingImage
+      ),
+      isFavorite: Boolean(source.isFavorite),
+    };
+  };
+
+  const hasCastingDisplayResult = (result) =>
+    typeof result?.title === "string" && result.title.trim().length > 0;
+
+  const getCastingErrorMessage = (error) =>
+    error?.response?.data?.message ??
+    error?.response?.data?.error ??
+    error?.message ??
+    "캐스팅 결과를 만들지 못했어요. 잠시 후 다시 시도해주세요.";
+
+  const createCastingForApi = async (recordId) => {
+    savingRef.current = true;
+    setSaving(true);
+
+    try {
+      const createdCasting = await castingsApi.createCasting(recordId);
+      let result = normalizeCastingResultForApi(createdCasting, recordId);
+
+      if (!hasCastingDisplayResult(result) || !result.imageUrl) {
+        const casting = await castingsApi.getCastingByRecordId(recordId);
+        result = normalizeCastingResultForApi(casting, recordId);
+      }
+
+      if (!hasCastingDisplayResult(result)) {
+        return null;
+      }
+
+      return result;
+    } catch (error) {
+      console.warn("Failed to create casting:", error);
+      showDialog(getCastingErrorMessage(error));
+      return null;
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  };
+
+  const navigateResultForApi = (recordId, result) => {
+    const rootNavigation = findNavigationWithRoute(navigation, "Main");
+    const params = recordId ? { recordId, result } : { result };
+
+    if (rootNavigation) {
+      rootNavigation.navigate("Main", {
+        screen: "Result",
+        params,
+      });
+      return;
+    }
+
+    navigation.navigate("Result", params);
+  };
+
+  const goAnalysisLoadingForApi = (recordId, shouldStartGeneration = false) => {
+    const rootNavigation = findNavigationWithRoute(navigation, "AnalysisLoading");
+    const params = recordId ? { recordId, shouldStartGeneration } : { shouldStartGeneration };
 
     if (rootNavigation) {
       rootNavigation.navigate("AnalysisLoading", params);
@@ -277,7 +509,8 @@ export default function DailyRecordScreen({ navigation }) {
     const record = await saveRecordForApi("COMPLETED");
 
     if (record?.id) {
-      navigateAnalysisLoadingForApi(record.id);
+      setTodayResultReady(false);
+      goAnalysisLoadingForApi(record.id, true);
     } else if (record) {
       showDialog("\uAE30\uB85D\uC740 \uC800\uC7A5\uB410\uC9C0\uB9CC \uACB0\uACFC \uC870\uD68C\uC5D0 \uD544\uC694\uD55C ID\uB97C \uBC1B\uC9C0 \uBABB\uD588\uC5B4\uC694.");
     }
@@ -288,15 +521,50 @@ export default function DailyRecordScreen({ navigation }) {
       return;
     }
 
-    const rootNavigation = navigation.getParent?.();
+    const rootNavigation = findNavigationWithRoute(navigation, "Main");
 
     if (resultReady) {
+      try {
+        const status = await recordsApi.getTodayStatus();
+        const recordId =
+          status?.dailyRecordId ??
+          status?.recordId ??
+          status?.record?.id ??
+          status?.dailyRecord?.id ??
+          status?.id;
+
+        if (status?.screen === "RESULT" && recordId) {
+          const casting = await castingsApi.getCastingByRecordId(recordId);
+          const result = normalizeCastingResultForApi(casting, recordId);
+
+          setTodayResultReady(true, result);
+          navigateResultForApi(recordId, result);
+          return;
+        }
+
+        if (status?.screen === "WAITING") {
+          goAnalysisLoadingForApi(recordId);
+          return;
+        }
+      } catch (error) {
+        console.warn("Failed to open existing result:", error);
+      }
+
+      const storedResult = getTodayRecordState().resultData;
+
       if (rootNavigation) {
-        rootNavigation.navigate("Result");
+        rootNavigation.navigate("Main", {
+          screen: "Result",
+          params: {
+            result: storedResult,
+          },
+        });
         return;
       }
 
-      navigation.navigate("Result");
+      navigation.navigate("Result", {
+        result: storedResult,
+      });
       return;
     }
 
@@ -313,7 +581,8 @@ export default function DailyRecordScreen({ navigation }) {
     const record = await saveRecordForApi("COMPLETED");
 
     if (record?.id) {
-      navigateAnalysisLoadingForApi(record.id);
+      setTodayResultReady(false);
+      goAnalysisLoadingForApi(record.id, true);
     } else if (record) {
       showDialog("\uAE30\uB85D\uC740 \uC800\uC7A5\uB410\uC9C0\uB9CC \uACB0\uACFC \uC870\uD68C\uC5D0 \uD544\uC694\uD55C ID\uB97C \uBC1B\uC9C0 \uBABB\uD588\uC5B4\uC694.");
     }
@@ -692,8 +961,8 @@ const createStyles = (screenWidth, screenHeight, insets) => {
         flex: 1,
         color: "#F5D7B1",
         fontFamily: "NanumSquareNeo",
-        fontSize: ms(20),
-        lineHeight: ms(29),
+        fontSize: ms(18),
+        lineHeight: ms(27),
         textAlign: "center",
       },
       saveButton: {
@@ -717,15 +986,15 @@ const createStyles = (screenWidth, screenHeight, insets) => {
         width: ms(30),
         color: "#FFAD62",
         fontFamily: "MaruBuriSemiBold",
-        fontSize: ms(28),
-        lineHeight: ms(31),
+        fontSize: ms(24),
+        lineHeight: ms(28),
       },
       promptText: {
         flex: 1,
         color: "#FF9F52",
         fontFamily: "NanumSquareNeo",
-        fontSize: ms(15),
-        lineHeight: ms(24),
+        fontSize: ms(14),
+        lineHeight: ms(22),
         textAlign: "center",
       },
       promptCurl: {
@@ -758,8 +1027,8 @@ const createStyles = (screenWidth, screenHeight, insets) => {
         paddingBottom: ms(42),
         color: "#FFF0D9",
         fontFamily: "NanumSquareNeo",
-        fontSize: ms(15),
-        lineHeight: ms(27),
+        fontSize: ms(14),
+        lineHeight: ms(25),
         zIndex: 1,
       },
       counter: {
@@ -932,8 +1201,8 @@ const createStyles = (screenWidth, screenHeight, insets) => {
         marginHorizontal: ms(10),
         color: "#FFFFFF",
         fontFamily: "NanumSquareNeo",
-        fontSize: ms(18),
-        lineHeight: ms(26),
+        fontSize: ms(16),
+        lineHeight: ms(24),
         textAlign: "center",
       },
       ctaSparkle: {

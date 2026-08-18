@@ -9,11 +9,26 @@ import CalendarScreen from "../screens/CalendarScreen";
 import HistoryScreen from "../screens/HistoryScreen";
 import DailyRecordScreen from "../screens/DailyRecordScreen";
 import MyPageScreen from "../screens/MyPageScreen";
+import ResultScreen from "../screens/ResultScreen";
 import {
   getTodayRecordState,
+  setTodayResultReady,
   subscribeTodayRecordState,
 } from "../services/todayRecordState";
+import {
+  getNavigationUiState,
+  subscribeNavigationUiState,
+} from "../services/navigationUiState";
 import { UserProvider } from "../contexts/UserContext";
+import recordsApi from "../api/records-api";
+import castingsApi from "../api/castings-api";
+
+const getStatusRecordId = (status) =>
+  status?.dailyRecordId ??
+  status?.recordId ??
+  status?.record?.id ??
+  status?.dailyRecord?.id ??
+  status?.id;
 
 const Tab = createBottomTabNavigator();
 
@@ -24,6 +39,8 @@ const TAB_LABELS = {
   History: "\uD788\uC2A4\uD1A0\uB9AC",
   MyPage: "\uB9C8\uC774\uD398\uC774\uC9C0",
 };
+
+const VISIBLE_TABS = ["Home", "Calendar", "DailyRecord", "History", "MyPage"];
 
 function TabIcon({ routeName, focused }) {
   const color = focused ? "#FFC17B" : "rgba(255, 255, 255, 0.62)";
@@ -56,8 +73,20 @@ function TabIcon({ routeName, focused }) {
 function CustomTabBar({ state, descriptors, navigation }) {
   const insets = useSafeAreaInsets();
   const [todayState, setTodayState] = useState(() => getTodayRecordState());
+  const [navigationUiState, setNavigationUiState] = useState(() =>
+    getNavigationUiState()
+  );
+  const activeRouteName = state.routes[state.index]?.name;
 
   useEffect(() => subscribeTodayRecordState(setTodayState), []);
+  useEffect(() => subscribeNavigationUiState(setNavigationUiState), []);
+
+  if (
+    navigationUiState.analysisLoadingVisible ||
+    (activeRouteName === "Result" && !todayState.resultReady)
+  ) {
+    return null;
+  }
 
   return (
     <View
@@ -75,10 +104,14 @@ function CustomTabBar({ state, descriptors, navigation }) {
         ]}
       >
         {state.routes.map((route, index) => {
+          if (!VISIBLE_TABS.includes(route.name)) {
+            return null;
+          }
+
           const focused = state.index === index;
           const { options } = descriptors[route.key];
 
-          const onPress = () => {
+          const onPress = async () => {
             const event = navigation.emit({
               type: "tabPress",
               target: route.key,
@@ -90,7 +123,45 @@ function CustomTabBar({ state, descriptors, navigation }) {
             }
 
             if (route.name === "DailyRecord" && todayState.resultReady) {
-              navigation.getParent()?.navigate("Result");
+              try {
+                const status = await recordsApi.getTodayStatus();
+                const recordId = getStatusRecordId(status);
+
+                if (status?.screen === "RESULT") {
+                  const casting = recordId
+                    ? await castingsApi.getCastingByRecordId(recordId)
+                    : null;
+
+                  if (casting) {
+                    setTodayResultReady(true, {
+                      ...casting,
+                      recordId,
+                    });
+                  }
+
+                  navigation.navigate("Result", {
+                    recordId,
+                    result: casting
+                      ? {
+                          ...casting,
+                          recordId,
+                        }
+                      : undefined,
+                  });
+                  return;
+                }
+
+                if (status?.screen === "WAITING") {
+                  navigation.getParent?.()?.navigate("AnalysisLoading", {
+                    recordId,
+                  });
+                  return;
+                }
+              } catch (error) {
+                console.warn("Failed to check today status:", error);
+              }
+
+              navigation.navigate("Result");
               return;
             }
 
@@ -175,6 +246,7 @@ export default function BottomTabNavigator() {
         <Tab.Screen name="DailyRecord" component={DailyRecordScreen} />
         <Tab.Screen name="History" component={HistoryScreen} />
         <Tab.Screen name="MyPage" component={MyPageScreen} />
+        <Tab.Screen name="Result" component={ResultScreen} />
       </Tab.Navigator>
     </UserProvider>
   );

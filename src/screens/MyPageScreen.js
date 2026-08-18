@@ -15,6 +15,12 @@ import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import NotificationSheet from "../components/NotificationSheet";
 import authApi from "../api/auth-api";
 import mypageApi from "../api/mypage-api";
+import {
+  getNotificationState,
+  markAllNotificationsRead,
+  subscribeNotificationState,
+} from "../services/notificationState";
+import { subscribeFavoriteChanges } from "../services/favoriteState";
 
 const COPY = {
   title: "\uB9C8\uC774\uD398\uC774\uC9C0",
@@ -82,39 +88,53 @@ export default function MyPageScreen({ navigation }) {
   const { styles, sizes } = createStyles(width, height, insets);
   const [logoutVisible, setLogoutVisible] = useState(false);
   const [notificationVisible, setNotificationVisible] = useState(false);
+  const [notificationState, setNotificationState] = useState(() =>
+    getNotificationState()
+  );
   const [profile, setProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(true);
   const [profileError, setProfileError] = useState(false);
 
   const rootNavigation = navigation.getParent?.();
 
+  useEffect(() => subscribeNotificationState(setNotificationState), []);
+
   useEffect(() => {
     let active = true;
 
-    mypageApi
-      .getMyPage()
-      .then((myPage) => {
-        if (active) {
-          setProfile(myPage);
-          setProfileError(false);
-        }
-      })
-      .catch((error) => {
-        console.warn("Failed to load my page:", error);
-        if (active) {
-          setProfileError(true);
-        }
-      })
-      .finally(() => {
-        if (active) {
-          setProfileLoading(false);
-        }
-      });
+    const loadMyPage = () => {
+      setProfileLoading(true);
+      mypageApi
+        .getMyPage()
+        .then((myPage) => {
+          if (active) {
+            setProfile(myPage);
+            setProfileError(false);
+          }
+        })
+        .catch((error) => {
+          console.warn("Failed to load my page:", error);
+          if (active) {
+            setProfileError(true);
+          }
+        })
+        .finally(() => {
+          if (active) {
+            setProfileLoading(false);
+          }
+        });
+    };
+
+    loadMyPage();
+    const unsubscribeFocus = navigation?.addListener?.("focus", loadMyPage);
+    const unsubscribeFavorite = subscribeFavoriteChanges(loadMyPage);
 
     return () => {
       active = false;
+      unsubscribeFocus?.();
+      unsubscribeFavorite?.();
     };
-  }, []);
+  }, [navigation]);
 
   const heroName = profile?.nickname
     ? `${profile.nickname}\uB2D8, \uC624\uB298\uB3C4`
@@ -214,6 +234,7 @@ export default function MyPageScreen({ navigation }) {
                   size={sizes.bell}
                   color="#FFB36B"
                 />
+                {notificationState.hasUnread && <View style={styles.bellDot} />}
               </TouchableOpacity>
             </View>
 
@@ -329,7 +350,9 @@ export default function MyPageScreen({ navigation }) {
         />
         <NotificationSheet
           visible={notificationVisible}
+          notifications={notificationState.notifications}
           onClose={() => setNotificationVisible(false)}
+          onMarkAllRead={markAllNotificationsRead}
         />
       </SafeAreaView>
     </ImageBackground>
@@ -417,14 +440,23 @@ const createStyles = (screenWidth, screenHeight, insets) => {
       title: {
         color: "#F7D8B4",
         fontFamily: "NanumSquareNeo",
-        fontSize: ms(isWide ? 32 : 29),
-        lineHeight: ms(isWide ? 42 : 39),
+        fontSize: ms(isWide ? 28 : 24),
+        lineHeight: ms(isWide ? 37 : 33),
       },
       bellButton: {
         width: ms(46),
         height: ms(46),
         alignItems: "center",
         justifyContent: "center",
+      },
+      bellDot: {
+        position: "absolute",
+        right: ms(8),
+        top: ms(7),
+        width: ms(6),
+        height: ms(6),
+        borderRadius: ms(5),
+        backgroundColor: "#FF7746",
       },
       heroCard: {
         marginTop: vs(isWide ? 18 : 18),
@@ -446,16 +478,16 @@ const createStyles = (screenWidth, screenHeight, insets) => {
       heroTitle: {
         color: "#F7D8B4",
         fontFamily: "Mindeulle",
-        fontSize: ms(isWide ? 24 : 23),
-        lineHeight: ms(isWide ? 32 : 31),
+        fontSize: ms(isWide ? 22 : 20),
+        lineHeight: ms(isWide ? 30 : 28),
         zIndex: 1,
       },
       heroTitleSmall: {
         marginTop: vs(2),
         color: "#F6C995",
         fontFamily: "Mindeulle",
-        fontSize: ms(isWide ? 18 : 17),
-        lineHeight: ms(isWide ? 26 : 24),
+        fontSize: ms(isWide ? 16 : 15),
+        lineHeight: ms(isWide ? 23 : 22),
         zIndex: 1,
       },
       heroCopy: {
@@ -515,8 +547,8 @@ const createStyles = (screenWidth, screenHeight, insets) => {
       statValue: {
         color: "#FFB26E",
         fontFamily: "MaruBuriSemiBold",
-        fontSize: ms(isWide ? 40 : 36),
-        lineHeight: ms(isWide ? 48 : 43),
+        fontSize: ms(isWide ? 34 : 30),
+        lineHeight: ms(isWide ? 42 : 37),
       },
       statUnit: {
         marginLeft: ms(5),

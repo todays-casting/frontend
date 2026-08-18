@@ -11,6 +11,13 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { setTodayResultReady } from "../services/todayRecordState";
+import {
+  clearAnalysisLoadingVisible,
+  setAnalysisLoadingVisible,
+} from "../services/navigationUiState";
+import analysesApi from "../api/analyses-api";
+import castingsApi from "../api/castings-api";
+import recordsApi from "../api/records-api";
 
 const COPY = {
   eyebrow: "✦  분석 중이에요  ✦",
@@ -22,7 +29,224 @@ const COPY = {
   tip: "기록할수록 더 정확한 분석을 받을 수 있어요!",
 };
 
-export default function AnalysisLoadingScreen({ navigation }) {
+const pickFirst = (...values) =>
+  values.find((value) => value !== undefined && value !== null && value !== "");
+
+const findNavigationWithRoute = (navigation, routeName) => {
+  let currentNavigation = navigation;
+
+  while (currentNavigation) {
+    if (currentNavigation.getState?.().routeNames?.includes(routeName)) {
+      return currentNavigation;
+    }
+
+    currentNavigation = currentNavigation.getParent?.();
+  }
+
+  return null;
+};
+
+const getStatusRecordId = (status) =>
+  pickFirst(
+    status?.dailyRecordId,
+    status?.recordId,
+    status?.record?.id,
+    status?.dailyRecord?.id,
+    status?.id
+  );
+
+const RESULT_KEYS = [
+  "casting",
+  "castingCard",
+  "castingResult",
+  "analysis",
+  "analysisResult",
+  "aiResult",
+  "result",
+  "data",
+];
+
+const FIELD_KEYS = [
+  "title",
+  "highlight",
+  "characterPhrase",
+  "castingTitle",
+  "roleName",
+  "role",
+  "characterName",
+  "genre",
+  "movieGenre",
+  "todayGenre",
+  "oneLineComment",
+  "line",
+  "quote",
+  "summary",
+  "scenePhrase",
+  "scene",
+  "memorableScene",
+  "sceneDescription",
+  "imageUrl",
+  "imageURL",
+  "posterUrl",
+  "posterImageUrl",
+  "castingImageUrl",
+  "cardImageUrl",
+  "imageKey",
+  "generatedImageKey",
+  "generated_image_key",
+];
+
+const hasAnyResultField = (value) =>
+  value &&
+  typeof value === "object" &&
+  FIELD_KEYS.some((key) => value[key] !== undefined && value[key] !== null);
+
+const hasDisplayResult = (value) =>
+  value &&
+  typeof value === "object" &&
+  typeof value.title === "string" &&
+  value.title.trim().length > 0;
+
+const getRecordIdForLoading = async (routeRecordId) => {
+  if (routeRecordId) {
+    return routeRecordId;
+  }
+
+  const status = await recordsApi.getTodayStatus();
+  return getStatusRecordId(status);
+};
+
+const findResultSource = (value, depth = 0) => {
+  if (!value || typeof value !== "object" || depth > 4) {
+    return value;
+  }
+
+  if (hasAnyResultField(value)) {
+    return value;
+  }
+
+  for (const key of RESULT_KEYS) {
+    const nested = findResultSource(value[key], depth + 1);
+
+    if (hasAnyResultField(nested)) {
+      return nested;
+    }
+  }
+
+  return value;
+};
+
+const normalizeCastingResult = (casting, recordId) => {
+  const source = findResultSource(casting) ?? {};
+  const textResult =
+    typeof source === "string"
+      ? source
+      : typeof casting === "string"
+        ? casting
+        : "";
+
+  return {
+    recordId:
+      pickFirst(source.dailyRecordId, source.recordId, casting?.dailyRecordId, casting?.recordId) ??
+      recordId,
+    userName: pickFirst(source.userName, source.nickname, source.name),
+    title: pickFirst(
+      source.title,
+      source.roleName,
+      source.role,
+      source.characterName,
+      source.character,
+      source.castingTitle
+    ),
+    highlight: pickFirst(
+      source.highlight,
+      source.characterPhrase,
+      source.character
+    ),
+    genre: pickFirst(source.genre, source.movieGenre, source.todayGenre),
+    role: pickFirst(source.roleName, source.role, source.characterName),
+    line: pickFirst(
+      source.oneLineComment,
+      source.line,
+      source.quote,
+      source.summary,
+      source.description,
+      textResult
+    ),
+    scene: pickFirst(
+      source.scenePhrase,
+      source.scene,
+      source.memorableScene,
+      source.sceneDescription,
+      source.situation
+    ),
+    imageUrl: pickFirst(
+      source.imageUrl,
+      source.imageURL,
+      source.image_url,
+      source.generatedImageUrl,
+      source.generatedImageURL,
+      source.generatedImage,
+      source.posterUrl,
+      source.posterImageUrl,
+      source.castingImageUrl,
+      source.cardImageUrl
+    ),
+    imageKey: pickFirst(
+      source.imageKey,
+      source.image_key,
+      source.generatedImageKey,
+      source.generated_image_key,
+      source.generatedImageId,
+      source.generated_image_id,
+      typeof source.castingImageId === "string" ? source.castingImageId : null,
+      casting?.imageKey,
+      casting?.image_key,
+      casting?.generatedImageKey,
+      casting?.generated_image_key,
+      casting?.generatedImageId,
+      casting?.generated_image_id,
+      typeof casting?.castingImageId === "string" ? casting.castingImageId : null
+    ),
+    hasGeneratedImageUrl: Boolean(source.hasGeneratedImageUrl ?? casting?.hasGeneratedImageUrl),
+    hasResolvedCastingImage: Boolean(
+      source.hasResolvedCastingImage ?? casting?.hasResolvedCastingImage
+    ),
+    isFavorite: Boolean(source.isFavorite),
+  };
+};
+
+const navigateResult = (navigation, recordId, result = null) => {
+  const params = result ? { result, recordId } : { recordId };
+  const mainNavigation = findNavigationWithRoute(navigation, "Main");
+
+  clearAnalysisLoadingVisible();
+
+  if (mainNavigation) {
+    mainNavigation.navigate("Main", {
+      screen: "Result",
+      params,
+    });
+    return;
+  }
+
+  if (navigation.getState?.().routeNames?.includes("Main")) {
+    navigation.navigate("Main", {
+      screen: "Result",
+      params,
+    });
+    return;
+  }
+
+  if (navigation.getState?.().routeNames?.includes("Result")) {
+    navigation.navigate("Result", params);
+    return;
+  }
+
+  navigation.goBack();
+};
+
+export function AnalysisLoadingView({ navigation, onBack }) {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const { styles, sizes } = createStyles(width, height, insets);
@@ -33,16 +257,8 @@ export default function AnalysisLoadingScreen({ navigation }) {
       setActiveDot((current) => (current + 1) % 3);
     }, 420);
 
-    const doneTimer = setTimeout(() => {
-      setTodayResultReady(true);
-      navigation.replace("Result");
-    }, 3600);
-
-    return () => {
-      clearInterval(dotTimer);
-      clearTimeout(doneTimer);
-    };
-  }, [navigation]);
+    return () => clearInterval(dotTimer);
+  }, []);
 
   return (
     <ImageBackground
@@ -63,7 +279,7 @@ export default function AnalysisLoadingScreen({ navigation }) {
         <TouchableOpacity
           activeOpacity={0.75}
           style={styles.backButton}
-          onPress={() => navigation.goBack()}
+          onPress={onBack ?? (() => navigation.goBack())}
         >
           <Ionicons name="chevron-back" size={sizes.backIcon} color="#FFB36B" />
         </TouchableOpacity>
@@ -105,6 +321,180 @@ export default function AnalysisLoadingScreen({ navigation }) {
       </SafeAreaView>
     </ImageBackground>
   );
+}
+
+export default function AnalysisLoadingScreen({ navigation, route }) {
+  const routeRecordId = route?.params?.recordId;
+  const shouldStartGeneration = route?.params?.shouldStartGeneration === true;
+
+  useEffect(() => {
+    setAnalysisLoadingVisible(true, "AnalysisLoadingScreen");
+
+    return () => setAnalysisLoadingVisible(false, "AnalysisLoadingScreen");
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    let retryTimer = null;
+    let attempts = 0;
+    let creationStarted = !shouldStartGeneration;
+    const maxAttempts = 120;
+
+    const ensureCastingRequested = async (recordId) => {
+      if (creationStarted) {
+        return;
+      }
+
+      creationStarted = true;
+
+      try {
+        await analysesApi.createAnalysis(recordId);
+      } catch (error) {
+        if (![400, 409].includes(error?.response?.status)) {
+          console.warn("Failed to request analysis:", error);
+        }
+      }
+
+      try {
+        await castingsApi.createCasting(recordId);
+      } catch (error) {
+        if (![400, 404, 409].includes(error?.response?.status)) {
+          console.warn("Failed to request casting generation:", error);
+        }
+      }
+    };
+
+    const runAnalysis = async () => {
+      attempts += 1;
+      let recordId = null;
+
+      try {
+        const status = await recordsApi.getTodayStatus();
+        const statusRecordId = getStatusRecordId(status);
+
+        recordId = routeRecordId ?? statusRecordId;
+
+        if (attempts === 1 || status?.screen === "RESULT") {
+          console.log("[AnalysisLoading] status", {
+            attempt: attempts,
+            routeRecordId,
+            recordId,
+            screen: status?.screen,
+          });
+        }
+
+        if (status?.screen === "RESULT" && recordId) {
+          try {
+            const casting = await castingsApi.getCastingByRecordId(recordId);
+            const result = normalizeCastingResult(casting, recordId);
+
+            console.log("[AnalysisLoading] result casting", {
+              recordId,
+              title: result.title,
+              imageUrl: result.imageUrl,
+              imageKey: result.imageKey,
+              raw: casting,
+            });
+
+            setTodayResultReady(true, result);
+            navigateResult(navigation, recordId, result);
+            return;
+          } catch (error) {
+            console.warn("[AnalysisLoading] RESULT status but casting fetch failed:", error);
+            navigateResult(navigation, recordId);
+            return;
+          }
+        }
+      } catch (error) {
+        console.warn("[AnalysisLoading] failed to load today status:", error);
+
+        try {
+          recordId = await getRecordIdForLoading(routeRecordId);
+        } catch (recordIdError) {
+          console.warn("[AnalysisLoading] failed to resolve recordId:", recordIdError);
+        }
+
+        if (active && attempts < maxAttempts) {
+          retryTimer = setTimeout(runAnalysis, 1800);
+        }
+        return;
+      }
+
+      if (!recordId) {
+        if (attempts < maxAttempts) {
+          retryTimer = setTimeout(runAnalysis, 1800);
+        }
+        return;
+      }
+
+      if (shouldStartGeneration) {
+        ensureCastingRequested(recordId);
+      }
+
+      try {
+        const casting = await castingsApi.getCastingByRecordId(recordId);
+
+        if (!active) {
+          return;
+        }
+
+        const result = normalizeCastingResult(casting, recordId);
+
+        if (attempts === 1 || hasDisplayResult(result)) {
+          console.log("[AnalysisLoading] casting poll", {
+            attempt: attempts,
+            recordId,
+            title: result.title,
+            imageUrl: result.imageUrl,
+            imageKey: result.imageKey,
+            raw: casting,
+          });
+        }
+
+        if (!hasDisplayResult(result)) {
+          if (attempts < maxAttempts) {
+            retryTimer = setTimeout(runAnalysis, 1800);
+            return;
+          }
+
+          return;
+        }
+
+        setTodayResultReady(true, result);
+        navigateResult(navigation, recordId, result);
+      } catch (error) {
+        console.warn("[AnalysisLoading] casting poll failed:", {
+          attempt: attempts,
+          recordId,
+          status: error?.response?.status,
+          data: error?.response?.data,
+          message: error?.message,
+        });
+
+        if (!active) {
+          return;
+        }
+
+        if (attempts < maxAttempts) {
+          retryTimer = setTimeout(runAnalysis, 1800);
+        }
+      }
+    };
+
+    runAnalysis();
+
+    return () => {
+      active = false;
+      clearTimeout(retryTimer);
+    };
+  }, [navigation, routeRecordId, shouldStartGeneration]);
+
+  const goBack = () => {
+    clearAnalysisLoadingVisible();
+    navigation.goBack();
+  };
+
+  return <AnalysisLoadingView navigation={navigation} onBack={goBack} />;
 }
 
 const createStyles = (screenWidth, screenHeight, insets) => {
