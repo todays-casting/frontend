@@ -1,36 +1,17 @@
-import { registerRootComponent } from 'expo';
-import { Dimensions, Platform } from 'react-native';
+import { registerRootComponent } from "expo";
+import { Platform } from "react-native";
 
-import App from './App';
+import App from "./App";
 
 const WEB_MOBILE_WIDTH = 393;
 
-if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof document !== 'undefined') {
-  const syncWebMobileDimensions = () => {
-    const viewportWidth = Math.min(window.innerWidth || WEB_MOBILE_WIDTH, WEB_MOBILE_WIDTH);
-    const viewportHeight = window.innerHeight || 852;
-    const pixelRatio = window.devicePixelRatio || 1;
+if (
+  Platform.OS === "web" &&
+  typeof window !== "undefined" &&
+  typeof document !== "undefined"
+) {
+  const style = document.createElement("style");
 
-    Dimensions.set({
-      window: {
-        width: viewportWidth,
-        height: viewportHeight,
-        scale: pixelRatio,
-        fontScale: 1,
-      },
-      screen: {
-        width: viewportWidth,
-        height: viewportHeight,
-        scale: pixelRatio,
-        fontScale: 1,
-      },
-    });
-  };
-
-  syncWebMobileDimensions();
-  window.addEventListener('resize', syncWebMobileDimensions);
-
-  const style = document.createElement('style');
   style.textContent = `
     html,
     body,
@@ -54,6 +35,7 @@ if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof document !=
       background: #160E2A;
     }
   `;
+
   document.head.appendChild(style);
 }
 
