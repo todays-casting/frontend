@@ -324,6 +324,16 @@ export default function CalendarScreen({ navigation }) {
     outputRange: ["180deg", "360deg"],
   });
 
+  const frontOpacity = flip.interpolate({
+    inputRange: [0, 0.499, 0.5, 1],
+    outputRange: [1, 1, 0, 0],
+  });
+
+  const backOpacity = flip.interpolate({
+    inputRange: [0, 0.499, 0.5, 1],
+    outputRange: [0, 0, 1, 1],
+  });
+
   const openRecord = async (day) => {
     if (day.muted) {
       return;
@@ -916,7 +926,10 @@ export default function CalendarScreen({ navigation }) {
                 style={[
                   styles.castingCard,
                   styles.frontCard,
-                  { transform: [{ perspective: 1000 }, { rotateY: frontRotate }] },
+                  {
+                    opacity: frontOpacity,
+                    transform: [{ perspective: 1000 }, { rotateY: frontRotate }],
+                  },
                 ]}
               >
                 <CastingCardFront
@@ -933,7 +946,10 @@ export default function CalendarScreen({ navigation }) {
                 style={[
                   styles.castingCard,
                   styles.backCard,
-                  { transform: [{ perspective: 1000 }, { rotateY: backRotate }] },
+                  {
+                    opacity: backOpacity,
+                    transform: [{ perspective: 1000 }, { rotateY: backRotate }],
+                  },
                 ]}
               >
                 <CastingCardBack

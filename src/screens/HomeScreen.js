@@ -112,6 +112,9 @@ const normalizeHomeResult = (casting, fallbackRecordId) => {
     genre: pickFirst(casting.genre, casting.movieGenre, casting.todayGenre, ""),
     line: pickFirst(casting.oneLineComment, casting.line, casting.quote, ""),
     scene: pickFirst(casting.scenePhrase, casting.scene, casting.memorableScene, ""),
+    characterPhrase: pickFirst(casting.characterPhrase, ""),
+    commentPhrase: pickFirst(casting.commentPhrase, ""),
+    highlight: pickFirst(casting.highlight, ""),
     imageUrl: pickFirst(casting.imageUrl, casting.generatedImageUrl, ""),
     isFavorite: Boolean(casting.isFavorite),
   };
@@ -128,6 +131,7 @@ export default function HomeScreen({ navigation, route }) {
   const [todayScreen, setTodayScreen] = useState(null);
   const [clockRefreshKey, setClockRefreshKey] = useState(0);
   const [notificationVisible, setNotificationVisible] = useState(false);
+  const [resultPage, setResultPage] = useState(0);
   const [notificationState, setNotificationState] = useState(() =>
     getNotificationState()
   );
@@ -160,6 +164,7 @@ export default function HomeScreen({ navigation, route }) {
     ],
     [resultCard]
   );
+  useEffect(() => setResultPage(0), [resultCard?.recordId, resultCard?.recordDate]);
   const goInput = async () => {
     const returnTo = { screen: "Home" };
 
@@ -429,7 +434,77 @@ export default function HomeScreen({ navigation, route }) {
             </TouchableOpacity>
           </View>
 
-          {hasResultCard ? (
+          {hasResultCard && resultCardIsToday ? (
+            <View style={styles.resultCarousel}>
+              <ScrollView
+                horizontal
+                pagingEnabled
+                bounces={false}
+                showsHorizontalScrollIndicator={false}
+                decelerationRate="fast"
+                snapToInterval={responsive.resultViewportWidth}
+                nestedScrollEnabled
+                scrollEventThrottle={16}
+                onScroll={(event) => {
+                  const nextPage = Math.round(
+                    event.nativeEvent.contentOffset.x / responsive.resultViewportWidth
+                  );
+                  const clampedPage = Math.max(0, Math.min(1, nextPage));
+
+                  setResultPage((current) =>
+                    current === clampedPage ? current : clampedPage
+                  );
+                }}
+                onMomentumScrollEnd={(event) => {
+                  const nextPage = Math.round(
+                    event.nativeEvent.contentOffset.x / responsive.resultViewportWidth
+                  );
+                  setResultPage(Math.max(0, Math.min(1, nextPage)));
+                }}
+              >
+                <TouchableOpacity
+                  activeOpacity={0.92}
+                  style={styles.resultPage}
+                  onPress={goResult}
+                >
+                  <View style={styles.resultCastingCardInner}>
+                    <CastingCardFront
+                      date={formatDisplayDate(resultCard.recordDate ?? getTodayDateKey())}
+                      record={resultCard}
+                      eyebrow="TODAY’S CASTING"
+                      rows={resultRows}
+                      isFavorite={resultCard.isFavorite}
+                      onToggleFavorite={toggleHomeFavorite}
+                      onFlip={() => {}}
+                      showInfoPanel={false}
+                      showFlipButton={false}
+                    />
+                  </View>
+                </TouchableOpacity>
+
+                <View style={styles.resultPage}>
+                  <HomeResultDetails
+                    result={resultCard}
+                    date={formatDisplayDate(resultCard.recordDate ?? getTodayDateKey())}
+                    styles={styles}
+                    detailIconSize={responsive.detailIconSize}
+                  />
+                </View>
+              </ScrollView>
+
+              <View style={styles.resultPagerDots} pointerEvents="none">
+                {[0, 1].map((page) => (
+                  <View
+                    key={page}
+                    style={[
+                      styles.resultPagerDot,
+                      resultPage === page && styles.resultPagerDotActive,
+                    ]}
+                  />
+                ))}
+              </View>
+            </View>
+          ) : hasResultCard ? (
             <TouchableOpacity
               activeOpacity={0.92}
               style={styles.resultCastingCard}
@@ -566,6 +641,58 @@ export default function HomeScreen({ navigation, route }) {
   );
 }
 
+function HomeResultDetails({ result, date, styles, detailIconSize }) {
+  const details = [
+    { icon: "film-outline", label: "오늘의 장르", value: result.genre },
+    { icon: "person-outline", label: "오늘의 배역", value: result.roleName || result.title },
+    { icon: "sparkles-outline", label: "캐릭터 문구", value: result.characterPhrase },
+    { icon: "flash-outline", label: "오늘의 하이라이트", value: result.highlight },
+    { icon: "videocam-outline", label: "오늘의 장면", value: result.scenePhrase || result.scene },
+    { icon: "pencil-outline", label: "한 줄 코멘트", value: result.oneLineComment || result.line },
+    { icon: "chatbubble-outline", label: "코멘트 문구", value: result.commentPhrase },
+  ];
+
+  return (
+    <View style={styles.detailCard}>
+      <Svg
+        pointerEvents="none"
+        width="100%"
+        height="100%"
+        viewBox="0 0 404 584"
+        preserveAspectRatio="none"
+        style={styles.detailCardBorder}
+      >
+        <Path d={CARD_PATH} fill="rgba(21, 15, 45, 0.96)" stroke="#E9AD62" strokeWidth="1.4" />
+      </Svg>
+
+      <View style={styles.detailContent}>
+        <Text style={styles.detailEyebrow}>✦ TODAY’S CASTING ✦</Text>
+        <Text style={styles.detailTitle}>오늘의 캐스팅 결과</Text>
+        <Text style={styles.detailDate}>{date}</Text>
+
+        <View style={styles.detailRows}>
+          {details.map((detail) => (
+            <View key={detail.label} style={styles.detailRow}>
+              <View style={styles.detailIconCircle}>
+                <Ionicons name={detail.icon} size={detailIconSize} color="#F1B66E" />
+              </View>
+              <View style={styles.detailCopy}>
+                <Text style={styles.detailLabel}>{detail.label}</Text>
+                <Text
+                  style={styles.detailValue}
+                  numberOfLines={2}
+                >
+                  {detail.value || "기록된 내용이 없어요"}
+                </Text>
+              </View>
+            </View>
+          ))}
+        </View>
+      </View>
+    </View>
+  );
+}
+
 const createStyles = (screenWidth, screenHeight, insets) => {
   const scale = Math.min(Math.max(screenWidth / 393, 0.82), 1.15);
   const ms = (value) => value * scale;
@@ -679,12 +806,140 @@ const createStyles = (screenWidth, screenHeight, insets) => {
     overflow: "hidden",
   },
 
+  resultCarousel: {
+    width: screenWidth,
+    height: resultBaseHeight * resultCardScale,
+    marginLeft: -cardHorizontalMargin,
+    overflow: "visible",
+  },
+
+  resultPage: {
+    width: screenWidth,
+    height: resultBaseHeight * resultCardScale,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+
   resultCastingCardInner: {
     width: resultBaseWidth,
     height: resultBaseHeight,
     position: "relative",
     overflow: "hidden",
     transform: [{ scale: resultCardScale }],
+  },
+
+  resultPagerDots: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: -ms(18),
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: ms(8),
+  },
+
+  resultPagerDot: {
+    width: ms(8),
+    height: ms(8),
+    borderRadius: ms(4),
+    backgroundColor: "rgba(184, 153, 198, 0.52)",
+  },
+
+  resultPagerDotActive: {
+    backgroundColor: "#FFAE69",
+  },
+
+  detailCard: {
+    width: resultBaseWidth,
+    height: resultBaseHeight,
+    position: "relative",
+    overflow: "hidden",
+    transform: [{ scale: resultCardScale }],
+  },
+
+  detailCardBorder: {
+    ...StyleSheet.absoluteFillObject,
+  },
+
+  detailContent: {
+    flex: 1,
+    paddingTop: ms(30),
+    paddingHorizontal: ms(18),
+    paddingBottom: ms(20),
+  },
+
+  detailEyebrow: {
+    color: "#E9AD62",
+    fontFamily: "MaruBuriSemiBold",
+    fontSize: ms(11),
+    lineHeight: ms(17),
+    letterSpacing: ms(1),
+    textAlign: "center",
+  },
+
+  detailTitle: {
+    paddingTop: ms(7),
+    color: "#FFD4A1",
+    fontFamily: "MaruBuriSemiBold",
+    fontSize: ms(22),
+    lineHeight: ms(30),
+    textAlign: "center",
+  },
+
+  detailDate: {
+    paddingTop: ms(2),
+    color: "rgba(232, 211, 201, 0.72)",
+    fontFamily: "NanumSquareNeo",
+    fontSize: ms(9),
+    lineHeight: ms(14),
+    textAlign: "center",
+  },
+
+  detailRows: {
+    flex: 1,
+    paddingTop: ms(14),
+  },
+
+  detailRow: {
+    flex: 1,
+    minHeight: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: ms(5),
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(225, 166, 104, 0.16)",
+    gap: ms(8),
+  },
+
+  detailIconCircle: {
+    width: ms(30),
+    height: ms(30),
+    borderRadius: ms(15),
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(225, 166, 104, 0.36)",
+  },
+
+  detailCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+
+  detailLabel: {
+    color: "#E8B477",
+    fontFamily: "NanumSquareNeo",
+    fontSize: ms(8),
+    lineHeight: ms(12),
+  },
+
+  detailValue: {
+    paddingTop: ms(2),
+    color: "#FFD4A1",
+    fontFamily: "MaruBuriSemiBold",
+    fontSize: ms(11),
+    lineHeight: ms(15),
   },
 
   carryoverCtaButton: {
@@ -834,5 +1089,7 @@ const createStyles = (screenWidth, screenHeight, insets) => {
     promptIconSize: Math.max(12, cs(19)),
     ctaIconSize: Math.max(12, cs(19)),
     arrowIconSize: Math.max(13, cs(21)),
+    detailIconSize: Math.max(14, ms(18)),
+    resultViewportWidth: screenWidth,
   };
 };

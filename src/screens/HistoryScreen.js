@@ -372,6 +372,16 @@ export default function HistoryScreen({ navigation }) {
     outputRange: ["180deg", "360deg"],
   });
 
+  const frontOpacity = flip.interpolate({
+    inputRange: [0, 0.499, 0.5, 1],
+    outputRange: [1, 1, 0, 0],
+  });
+
+  const backOpacity = flip.interpolate({
+    inputRange: [0, 0.499, 0.5, 1],
+    outputRange: [0, 0, 1, 1],
+  });
+
   const showFront = () => {
     setBackVisible(false);
     Animated.spring(flip, {
@@ -717,6 +727,8 @@ export default function HistoryScreen({ navigation }) {
                             backVisible={backVisible}
                             frontRotate={frontRotate}
                             backRotate={backRotate}
+                            frontOpacity={frontOpacity}
+                            backOpacity={backOpacity}
                             onToggleFavorite={() => toggleFavorite(record)}
                             onShowBack={showBack}
                             onShowFront={showFront}
@@ -854,6 +866,8 @@ function HistoryFlipCard({
   backVisible,
   frontRotate,
   backRotate,
+  frontOpacity,
+  backOpacity,
   onToggleFavorite,
   onShowBack,
   onShowFront,
@@ -865,6 +879,7 @@ function HistoryFlipCard({
         style={[
           styles.flipFace,
           {
+            opacity: frontOpacity,
             transform: [{ perspective: 1000 }, { rotateY: frontRotate }],
           },
         ]}
@@ -884,6 +899,7 @@ function HistoryFlipCard({
           styles.flipFace,
           styles.flipBackFace,
           {
+            opacity: backOpacity,
             transform: [{ perspective: 1000 }, { rotateY: backRotate }],
           },
         ]}
