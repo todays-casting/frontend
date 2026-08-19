@@ -647,9 +647,7 @@ function HomeResultDetails({ result, date, styles, detailIconSize }) {
     { icon: "person-outline", label: "오늘의 배역", value: result.roleName || result.title },
     { icon: "sparkles-outline", label: "캐릭터 문구", value: result.characterPhrase },
     { icon: "flash-outline", label: "오늘의 하이라이트", value: result.highlight },
-    { icon: "videocam-outline", label: "오늘의 장면", value: result.scenePhrase || result.scene },
     { icon: "pencil-outline", label: "한 줄 코멘트", value: result.oneLineComment || result.line },
-    { icon: "chatbubble-outline", label: "코멘트 문구", value: result.commentPhrase },
   ];
 
   return (
