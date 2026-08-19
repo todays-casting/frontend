@@ -40,6 +40,7 @@ const CALENDAR_CARD_PATH =
 const CASTING_CARD_PATH =
   "M31 1 H174 C179 14 188 21 202 21 C216 21 225 14 230 1 H373 C383 1 390 8 390 18 C399 19 404 26 404 36 V555 C404 565 398 571 388 571 C388 579 381 583 372 583 H32 C23 583 16 579 16 571 C6 571 0 565 0 555 V36 C0 26 6 20 14 18 C14 8 21 1 31 1 Z";
 const CASTING_CARD_BACKGROUND = require("../../assets/images/casting-card-sunset-background-v2.jpg");
+const PAPER_TEXTURE = require("../../assets/images/paper-texture-v1.png");
 const EMPTY_PAST_DAY_QUOTE = "아직 이 날의 장면은 비어 있어요.";
 const EMPTY_FUTURE_DAY_QUOTE = "다가올 캐스팅을 기다려주세요.";
 
@@ -1098,6 +1099,7 @@ export function CastingCardFront({
 }
 
 export function CastingCardBack({ date, onFlip, diary = RECORD.diary }) {
+  const paperClipId = `paper-back-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const [scrollMetrics, setScrollMetrics] = useState({
     contentHeight: 0,
     viewportHeight: 0,
@@ -1126,9 +1128,21 @@ export function CastingCardBack({ date, onFlip, diary = RECORD.diary }) {
         preserveAspectRatio="none"
         style={styles.backArtwork}
       >
+        <Defs>
+          <ClipPath id={paperClipId}>
+            <Path d={CASTING_CARD_PATH} />
+          </ClipPath>
+        </Defs>
+        <SvgImage
+          href={PAPER_TEXTURE}
+          width="404"
+          height="584"
+          preserveAspectRatio="xMidYMid slice"
+          clipPath={`url(#${paperClipId})`}
+        />
         <Path
           d={CASTING_CARD_PATH}
-          fill="#F4E9D9"
+          fill="none"
           stroke="rgba(184, 121, 84, 0.95)"
           strokeWidth="1.4"
           vectorEffect="non-scaling-stroke"

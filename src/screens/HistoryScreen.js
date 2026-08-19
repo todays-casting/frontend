@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
-  Dimensions,
+  Easing,
   Image,
   ImageBackground,
   Modal,
@@ -11,10 +11,11 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import NotificationSheet from "../components/NotificationSheet";
 import {
   getNotificationState,
@@ -26,16 +27,6 @@ import calendarApi from "../api/calendar-api";
 import castingsApi from "../api/castings-api";
 import recordsApi from "../api/records-api";
 import { notifyFavoriteChanged, subscribeFavoriteChanges } from "../services/favoriteState";
-
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
-const scale = Math.min(Math.max(SCREEN_WIDTH / 393, 0.82), 1.15);
-const ms = (value) => value * scale;
-const vs = ms;
-
-const CARD_WIDTH = ms(250);
-const CARD_GAP = -ms(104);
-const SNAP = CARD_WIDTH + CARD_GAP;
-const SIDE_PADDING = Math.max((SCREEN_WIDTH - CARD_WIDTH) / 2, ms(32));
 
 const toDateKey = (date) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
@@ -189,6 +180,9 @@ const DIARY_TEXT =
   "새벽 일찍 눈이 떠졌다.\n창문을 열자 상쾌한 공기가 얼굴을 스쳤다.\n따뜻한 차 한 잔을 내려 천천히 마시며\n오늘 하루를 어떻게 보내고 싶은지 생각해봤다.\n\n오후엔 도서관에 다녀왔다.\n조용한 공간에서 책을 읽으니\n복잡했던 마음이 차분해졌다.\n새로운 문장을 만나면 마음이 환해지는 기분이었다.\n\n저녁엔 오랜만에 친구와 통화를 했다.\n서로의 이야기를 듣고 나니\n다시 힘을 낼 수 있을 것 같았다.\n\n큰 성과는 없었지만,\n작은 순간들이 모여 의미 있는 하루가 된 것 같다.\n\n오늘도 잘 해냈어, 나 자신.\n내일은 더 멋진 하루가 되길. ✦";
 
 export default function HistoryScreen({ navigation }) {
+  const { width: screenWidth } = useWindowDimensions();
+  const layout = useMemo(() => createHistoryLayout(screenWidth), [screenWidth]);
+  const { styles, ms, vs, SNAP } = layout;
   const initialWeek = useMemo(getCurrentWeek, []);
   const [week, setWeek] = useState(initialWeek);
   const [datePickerVisible, setDatePickerVisible] = useState(false);
@@ -210,8 +204,24 @@ export default function HistoryScreen({ navigation }) {
   const scrollEndTimerRef = useRef(null);
   const lastScrollOffsetRef = useRef(0);
   const isDraggingRef = useRef(false);
+  const isProgrammaticScrollingRef = useRef(false);
+  const activeIndexRef = useRef(activeIndex);
   const scrollX = useRef(new Animated.Value(activeIndex * SNAP)).current;
+  const scrollAnimator = useRef(new Animated.Value(activeIndex * SNAP)).current;
   const flip = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    activeIndexRef.current = activeIndex;
+  }, [activeIndex]);
+
+  useEffect(() => {
+    const nextOffset = activeIndexRef.current * SNAP;
+    lastScrollOffsetRef.current = nextOffset;
+    scrollX.setValue(nextOffset);
+    requestAnimationFrame(() => {
+      scrollRef.current?.scrollTo({ x: nextOffset, animated: false });
+    });
+  }, [SNAP, scrollX]);
 
   useEffect(() => subscribeNotificationState(setNotificationState), []);
   useEffect(
@@ -266,7 +276,7 @@ export default function HistoryScreen({ navigation }) {
       scrollX.setValue(nextIndex * SNAP);
       scrollRef.current?.scrollTo({ x: nextIndex * SNAP, animated: false });
     }
-  }, [activeIndex, historyRecords.length, scrollX]);
+  }, [activeIndex, historyRecords.length, scrollX, SNAP]);
 
   useEffect(() => {
     let active = true;
@@ -507,12 +517,34 @@ export default function HistoryScreen({ navigation }) {
 
   const scrollToIndex = (index) => {
     const nextIndex = Math.max(0, Math.min(index, historyRecords.length - 1));
+    const nextOffset = nextIndex * SNAP;
+
+    if (nextIndex === activeIndex) {
+      return;
+    }
 
     setActiveIndex(nextIndex);
     resetCardSide();
-    scrollRef.current?.scrollTo({
-      x: nextIndex * SNAP,
-      animated: true,
+    clearTimeout(scrollEndTimerRef.current);
+    isProgrammaticScrollingRef.current = true;
+    scrollAnimator.stopAnimation();
+    scrollAnimator.setValue(lastScrollOffsetRef.current);
+
+    const listenerId = scrollAnimator.addListener(({ value }) => {
+      lastScrollOffsetRef.current = value;
+      scrollRef.current?.scrollTo({ x: value, animated: false });
+    });
+
+    Animated.timing(scrollAnimator, {
+      toValue: nextOffset,
+      duration: 420,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start(() => {
+      scrollAnimator.removeListener(listenerId);
+      lastScrollOffsetRef.current = nextOffset;
+      scrollRef.current?.scrollTo({ x: nextOffset, animated: false });
+      isProgrammaticScrollingRef.current = false;
     });
   };
 
@@ -551,7 +583,7 @@ export default function HistoryScreen({ navigation }) {
     const offsetX = event.nativeEvent.contentOffset.x;
     lastScrollOffsetRef.current = offsetX;
 
-    if (!isDraggingRef.current) {
+    if (!isDraggingRef.current && !isProgrammaticScrollingRef.current) {
       scheduleNearestCardSnap(offsetX);
     }
   };
@@ -722,6 +754,7 @@ export default function HistoryScreen({ navigation }) {
                       >
                         {index === activeIndex ? (
                           <HistoryFlipCard
+                            layout={layout}
                             record={record}
                             isFavorite={favoriteDates.has(record.dateKey)}
                             backVisible={backVisible}
@@ -735,6 +768,7 @@ export default function HistoryScreen({ navigation }) {
                           />
                         ) : (
                           <HistoryCardFront
+                            layout={layout}
                             record={record}
                             focused={index === activeIndex}
                             isFavorite={favoriteDates.has(record.dateKey)}
@@ -861,6 +895,7 @@ export default function HistoryScreen({ navigation }) {
 }
 
 function HistoryFlipCard({
+  layout,
   record,
   isFavorite,
   backVisible,
@@ -872,6 +907,7 @@ function HistoryFlipCard({
   onShowBack,
   onShowFront,
 }) {
+  const { styles } = layout;
   return (
     <View style={styles.flipCardWrap}>
       <Animated.View
@@ -885,6 +921,7 @@ function HistoryFlipCard({
         ]}
       >
         <HistoryCardFront
+          layout={layout}
           record={record}
           focused
           isFavorite={isFavorite}
@@ -904,19 +941,21 @@ function HistoryFlipCard({
           },
         ]}
       >
-        <HistoryCardBack record={record} onShowFront={onShowFront} />
+        <HistoryCardBack layout={layout} record={record} onShowFront={onShowFront} />
       </Animated.View>
     </View>
   );
 }
 
 function HistoryCardFront({
+  layout,
   record,
   focused,
   isFavorite,
   onToggleFavorite,
   onShowBack,
 }) {
+  const { styles } = layout;
   const rows = [
     { icon: "movie-open-outline", label: "오늘의 장르", text: record.genre },
     { icon: "pencil-outline", label: "오늘의 한줄 기록", text: record.line },
@@ -938,7 +977,8 @@ function HistoryCardFront({
   );
 }
 
-function HistoryCardBack({ record, onShowFront }) {
+function HistoryCardBack({ layout, record, onShowFront }) {
+  const { styles } = layout;
   return (
     <View style={styles.sharedCastingCard}>
       <CastingCardBack
@@ -950,19 +990,15 @@ function HistoryCardBack({ record, onShowFront }) {
   );
 }
 
-function HistoryInfoRow({ icon, label, text, last }) {
-  return (
-    <View style={[styles.infoRow, last && styles.lastInfoRow]}>
-      <MaterialCommunityIcons name={icon} size={ms(27)} color="#FFAF72" />
-      <View style={styles.infoTextWrap}>
-        <Text style={styles.infoLabel}>{label}</Text>
-        <Text style={styles.infoText}>{text}</Text>
-      </View>
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
+const createHistoryLayout = (SCREEN_WIDTH) => {
+  const scale = Math.min(Math.max(SCREEN_WIDTH / 393, 0.82), 1.15);
+  const ms = (value) => value * scale;
+  const vs = ms;
+  const CARD_WIDTH = ms(250);
+  const CARD_GAP = -ms(104);
+  const SNAP = CARD_WIDTH + CARD_GAP;
+  const SIDE_PADDING = Math.max((SCREEN_WIDTH - CARD_WIDTH) / 2, ms(32));
+  const styles = StyleSheet.create({
   background: {
     flex: 1,
     width: "100%",
@@ -1456,4 +1492,7 @@ const styles = StyleSheet.create({
     fontSize: ms(17),
     lineHeight: ms(24),
   },
-});
+  });
+
+  return { styles, ms, vs, CARD_WIDTH, CARD_GAP, SNAP, SIDE_PADDING };
+};
