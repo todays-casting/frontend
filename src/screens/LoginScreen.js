@@ -29,6 +29,7 @@ const BASE_WIDTH = 393;
 const BASE_HEIGHT = 824;
 const UI_SCALE = 0.9;
 const TEXT_SCALE = 0.88;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 const COPY = {
   subtitle1: "\uD558\uB8E8\uB97C \uAE30\uB85D\uD558\uACE0,",
@@ -42,6 +43,8 @@ const COPY = {
   kakaoLogin: "\uCE74\uCE74\uC624 \uB85C\uADF8\uC778",
   signUp: "\uD68C\uC6D0\uAC00\uC785",
   findPassword: "\uBE44\uBC00\uBC88\uD638 \uCC3E\uAE30",
+  loginFailed: "\uC774\uBA54\uC77C\uC774\uB098 \uBE44\uBC00\uBC88\uD638\uB97C \uD655\uC778\uD574\uC8FC\uC138\uC694.",
+  invalidEmail: "\uC62C\uBC14\uB978 \uC774\uBA54\uC77C\uC744 \uC785\uB825\uD574 \uC8FC\uC2ED\uC2DC\uC624.",
 };
 
 export default function LoginScreen({ navigation }) {
@@ -53,6 +56,8 @@ export default function LoginScreen({ navigation }) {
   const [loading, setLoading] = useState(false);
   const [kakaoLoading, setKakaoLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const trimmedEmail = email.trim();
+  const hasLoginError = !!errorMessage;
   const redirectUri = AuthSession.makeRedirectUri({
     scheme: "todayscasting",
     path: "oauth/kakao",
@@ -71,14 +76,21 @@ export default function LoginScreen({ navigation }) {
   const iconSize = (value) => value * scale;
 
   const handleLogin = async () => {
+    if (!EMAIL_PATTERN.test(trimmedEmail)) {
+      setErrorMessage(COPY.invalidEmail);
+      return;
+    }
+
     try {
       setLoading(true);
       setErrorMessage("");
-      await authApi.login({ email: email.trim(), password });
+      await authApi.login({ email: trimmedEmail, password });
       navigation.replace("Main");
     } catch (error) {
-      setErrorMessage(
-        error.response?.data?.message ?? "로그인에 실패했습니다. 이메일과 비밀번호를 확인해주세요."
+      const status = error.response?.status;
+      setErrorMessage(status === 400 || status === 401 || status === 403
+        ? COPY.loginFailed
+        : error.response?.data?.message ?? COPY.loginFailed
       );
     } finally {
       setLoading(false);
@@ -203,7 +215,7 @@ export default function LoginScreen({ navigation }) {
           </View>
 
           <View style={styles.loginArea}>
-            <View style={styles.inputBox}>
+            <View style={[styles.inputBox, hasLoginError && styles.inputBoxError]}>
               <Ionicons
                 name="person-outline"
                 size={iconSize(24)}
@@ -221,7 +233,7 @@ export default function LoginScreen({ navigation }) {
               />
             </View>
 
-            <View style={styles.inputBox}>
+            <View style={[styles.inputBox, hasLoginError && styles.inputBoxError]}>
               <Ionicons
                 name="lock-closed-outline"
                 size={iconSize(23)}
@@ -255,12 +267,21 @@ export default function LoginScreen({ navigation }) {
               activeOpacity={0.85}
               style={styles.loginButton}
               onPress={handleLogin}
-              disabled={loading || !email.includes("@") || password.length === 0}
+              disabled={loading || trimmedEmail.length === 0 || password.length === 0}
             >
               <Text style={styles.loginButtonText}>{loading ? "로그인 중..." : COPY.login}</Text>
             </TouchableOpacity>
 
-            {errorMessage ? <Text selectable style={styles.loginError}>{errorMessage}</Text> : null}
+            {errorMessage ? (
+              <View style={styles.loginErrorBox}>
+                <Ionicons
+                  name="alert-circle-outline"
+                  size={iconSize(18)}
+                  color="#FFB4B4"
+                />
+                <Text selectable style={styles.loginError}>{errorMessage}</Text>
+              </View>
+            ) : null}
 
             <View style={styles.dividerArea}>
               <View style={styles.divider} />
@@ -420,6 +441,11 @@ const createStyles = (screenWidth, screenHeight, insets) => {
     borderColor: "rgba(255, 255, 255, 0.42)",
   },
 
+  inputBoxError: {
+    borderColor: "rgba(255, 134, 134, 0.95)",
+    backgroundColor: "rgba(255, 244, 239, 0.92)",
+  },
+
   input: {
     flex: 1,
     marginLeft: ms(20),
@@ -443,13 +469,26 @@ const createStyles = (screenWidth, screenHeight, insets) => {
     color: "#151216",
   },
 
+  loginErrorBox: {
+    marginTop: vs(12),
+    minHeight: vs(46),
+    borderRadius: ms(12),
+    borderWidth: 1,
+    borderColor: "rgba(255, 134, 134, 0.62)",
+    backgroundColor: "rgba(111, 27, 45, 0.36)",
+    paddingHorizontal: ms(13),
+    paddingVertical: vs(9),
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
   loginError: {
-    marginTop: vs(10),
-    color: "#FFB0B0",
+    flex: 1,
+    marginLeft: ms(8),
+    color: "#FFFFFF",
     fontFamily: "NanumSquareNeo",
-    fontSize: fs(12),
-    lineHeight: fs(18),
-    textAlign: "center",
+    fontSize: fs(15),
+    lineHeight: fs(22),
   },
 
   dividerArea: {
