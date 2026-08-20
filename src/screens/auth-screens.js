@@ -17,6 +17,7 @@ import authApi from "../api/auth-api";
 
 const BACKGROUND = require("../../assets/images/login_background.png");
 const BASE_WIDTH = 393;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 function AuthScreenLayout({ navigation, step, title, description, children }) {
   const { width } = useWindowDimensions();
@@ -55,11 +56,11 @@ function AuthScreenLayout({ navigation, step, title, description, children }) {
   );
 }
 
-function Field({ styles, label, icon, value, onChangeText, placeholder, secureTextEntry, keyboardType }) {
+function Field({ styles, label, icon, value, onChangeText, placeholder, secureTextEntry, keyboardType, error }) {
   return (
     <View style={styles.fieldGroup}>
       <Text style={styles.label}>{label}</Text>
-      <View style={styles.inputBox}>
+      <View style={[styles.inputBox, error && styles.inputBoxError]}>
         <Ionicons name={icon} size={22} color="#756A7C" />
         <TextInput
           value={value}
@@ -73,6 +74,26 @@ function Field({ styles, label, icon, value, onChangeText, placeholder, secureTe
           autoCorrect={false}
         />
       </View>
+    </View>
+  );
+}
+
+function FeedbackMessage({ styles, children, type = "error", selectable }) {
+  const isSuccess = type === "success";
+
+  return (
+    <View style={[styles.feedbackBox, isSuccess && styles.feedbackBoxSuccess]}>
+      <Ionicons
+        name={isSuccess ? "checkmark-circle-outline" : "alert-circle-outline"}
+        size={18}
+        color={isSuccess ? "#B8FFD1" : "#FFB4B4"}
+      />
+      <Text
+        selectable={selectable}
+        style={[styles.feedbackText, isSuccess && styles.feedbackTextSuccess]}
+      >
+        {children}
+      </Text>
     </View>
   );
 }
@@ -120,15 +141,23 @@ export function SignUpStepOneScreen({ navigation }) {
   const [passwordConfirm, setPasswordConfirm] = useState("");
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const trimmedEmail = email.trim();
+  const emailIsValid = EMAIL_PATTERN.test(trimmedEmail);
+  const showEmailError = trimmedEmail.length > 0 && !emailIsValid;
   const canContinue =
-    email.includes("@") && password.length >= 8 && password === passwordConfirm;
+    emailIsValid && password.length >= 8 && password === passwordConfirm;
 
   const handleContinue = async () => {
+    if (!emailIsValid) {
+      setErrorMessage("올바른 이메일을 입력해 주십시오.");
+      return;
+    }
+
     try {
       setLoading(true);
       setErrorMessage("");
       const { userId } = await authApi.signUpStepOne({
-        email: email.trim(),
+        email: trimmedEmail,
         password,
         passwordConfirm,
       });
@@ -151,13 +180,16 @@ export function SignUpStepOneScreen({ navigation }) {
     >
       {(styles) => (
         <>
-          <Field styles={styles} label="이메일" icon="mail-outline" value={email} onChangeText={setEmail} placeholder="이메일을 입력해주세요" keyboardType="email-address" />
-          <Field styles={styles} label="비밀번호" icon="lock-closed-outline" value={password} onChangeText={setPassword} placeholder="8자 이상 입력해주세요" secureTextEntry />
-          <Field styles={styles} label="비밀번호 확인" icon="shield-checkmark-outline" value={passwordConfirm} onChangeText={setPasswordConfirm} placeholder="비밀번호를 다시 입력해주세요" secureTextEntry />
-          {passwordConfirm.length > 0 && password !== passwordConfirm ? (
-            <Text style={styles.errorText}>비밀번호가 일치하지 않습니다.</Text>
+          <Field styles={styles} label="이메일" icon="mail-outline" value={email} onChangeText={setEmail} placeholder="이메일을 입력해주세요" keyboardType="email-address" error={showEmailError || !!errorMessage} />
+          {showEmailError ? (
+            <FeedbackMessage styles={styles}>올바른 이메일을 입력해 주십시오.</FeedbackMessage>
           ) : null}
-          {errorMessage ? <Text selectable style={styles.errorText}>{errorMessage}</Text> : null}
+          <Field styles={styles} label="비밀번호" icon="lock-closed-outline" value={password} onChangeText={setPassword} placeholder="8자 이상 입력해주세요" secureTextEntry />
+          <Field styles={styles} label="비밀번호 확인" icon="shield-checkmark-outline" value={passwordConfirm} onChangeText={setPasswordConfirm} placeholder="비밀번호를 다시 입력해주세요" secureTextEntry error={passwordConfirm.length > 0 && password !== passwordConfirm} />
+          {passwordConfirm.length > 0 && password !== passwordConfirm ? (
+            <FeedbackMessage styles={styles}>비밀번호가 일치하지 않습니다.</FeedbackMessage>
+          ) : null}
+          {errorMessage ? <FeedbackMessage selectable styles={styles}>{errorMessage}</FeedbackMessage> : null}
           <PrimaryButton
             styles={styles}
             label={loading ? "처리 중..." : "다음"}
@@ -251,7 +283,7 @@ export function SignUpStepTwoScreen({ navigation, route }) {
             disabled={!canSubmit || !userId || loading}
             onPress={handleSignUp}
           />
-          {errorMessage ? <Text selectable style={styles.errorText}>{errorMessage}</Text> : null}
+          {errorMessage ? <FeedbackMessage selectable styles={styles}>{errorMessage}</FeedbackMessage> : null}
           <CompletionModal
             visible={completed}
             title="회원가입 완료"
@@ -335,6 +367,7 @@ export function FindPasswordScreen({ navigation }) {
                 onChangeText={setEmail}
                 placeholder="가입한 이메일을 입력해주세요"
                 keyboardType="email-address"
+                error={!!errorMessage}
               />
               <PrimaryButton
                 styles={styles}
@@ -342,11 +375,11 @@ export function FindPasswordScreen({ navigation }) {
                 disabled={!canSend || loading}
                 onPress={handleSendOtp}
               />
-              {errorMessage ? <Text selectable style={styles.errorText}>{errorMessage}</Text> : null}
+              {errorMessage ? <FeedbackMessage selectable styles={styles}>{errorMessage}</FeedbackMessage> : null}
             </>
           ) : (
             <>
-              <Text selectable style={styles.successText}>{email}로 인증코드를 전송했습니다.</Text>
+              <FeedbackMessage selectable styles={styles} type="success">{email}로 인증코드를 전송했습니다.</FeedbackMessage>
               <Field
                 styles={styles}
                 label="인증코드"
@@ -372,9 +405,10 @@ export function FindPasswordScreen({ navigation }) {
                 onChangeText={setPasswordConfirm}
                 placeholder="새 비밀번호를 다시 입력해주세요"
                 secureTextEntry
+                error={passwordConfirm.length > 0 && newPassword !== passwordConfirm}
               />
               {passwordConfirm.length > 0 && newPassword !== passwordConfirm ? (
-                <Text selectable style={styles.errorText}>새 비밀번호가 일치하지 않습니다.</Text>
+                <FeedbackMessage selectable styles={styles}>새 비밀번호가 일치하지 않습니다.</FeedbackMessage>
               ) : null}
               <PrimaryButton
                 styles={styles}
@@ -382,7 +416,7 @@ export function FindPasswordScreen({ navigation }) {
                 disabled={!canChange || loading}
                 onPress={handleChangePassword}
               />
-              {errorMessage ? <Text selectable style={styles.errorText}>{errorMessage}</Text> : null}
+              {errorMessage ? <FeedbackMessage selectable styles={styles}>{errorMessage}</FeedbackMessage> : null}
               <CompletionModal
                 visible={completed}
                 title="비밀번호 변경 완료"
@@ -442,6 +476,10 @@ const createStyles = (screenWidth, insets) => {
       alignItems: "center",
       gap: ms(14),
     },
+    inputBoxError: {
+      borderColor: "rgba(255, 134, 134, 0.95)",
+      backgroundColor: "rgba(255,244,239,0.94)",
+    },
     input: { flex: 1, color: "#2D2432", fontFamily: "NanumSquareNeo", fontSize: ms(15) },
     genderOptions: { flexDirection: "row", gap: ms(9) },
     genderButton: {
@@ -467,9 +505,35 @@ const createStyles = (screenWidth, insets) => {
     },
     disabledButton: { opacity: 0.4 },
     primaryButtonText: { color: "#211923", fontFamily: "NanumSquareNeo", fontSize: ms(17) },
-    helperText: { color: "rgba(255,255,255,0.58)", fontFamily: "NanumSquareNeo", fontSize: ms(12), lineHeight: ms(19) },
-    errorText: { color: "#FF9C9C", fontFamily: "NanumSquareNeo", fontSize: ms(12) },
-    successText: { color: "#FFD1A4", fontFamily: "NanumSquareNeo", fontSize: ms(13), lineHeight: ms(20) },
+    helperText: { color: "#FFFFFF", fontFamily: "NanumSquareNeo", fontSize: ms(13), lineHeight: ms(21) },
+    feedbackBox: {
+      minHeight: ms(42),
+      borderRadius: ms(12),
+      borderWidth: 1,
+      borderColor: "rgba(255, 134, 134, 0.62)",
+      backgroundColor: "rgba(111, 27, 45, 0.36)",
+      paddingHorizontal: ms(13),
+      paddingVertical: ms(10),
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: ms(8),
+    },
+    feedbackBoxSuccess: {
+      borderColor: "rgba(184, 255, 209, 0.52)",
+      backgroundColor: "rgba(33, 105, 66, 0.3)",
+    },
+    feedbackText: {
+      flex: 1,
+      color: "#FFFFFF",
+      fontFamily: "NanumSquareNeo",
+      fontSize: ms(14),
+      lineHeight: ms(21),
+    },
+    feedbackTextSuccess: {
+      color: "#FFFFFF",
+    },
+    errorText: { color: "#FFFFFF", fontFamily: "NanumSquareNeo", fontSize: ms(14), lineHeight: ms(21) },
+    successText: { color: "#FFFFFF", fontFamily: "NanumSquareNeo", fontSize: ms(14), lineHeight: ms(21) },
     modalOverlay: {
       flex: 1,
       paddingHorizontal: ms(30),
