@@ -24,6 +24,7 @@ import { subscribeFavoriteChanges } from "../services/favoriteState";
 
 const COPY = {
   title: "\uB9C8\uC774\uD398\uC774\uC9C0",
+  subtitle: "\uB098\uC758 \uAE30\uB85D\uACFC \uACC4\uC815\uC744 \uD55C\uB208\uC5D0 \uC0B4\uD3B4\uBCF4\uC138\uC694",
   heroName: "\uC0AC\uC6A9\uC790\uB2D8, \uC624\uB298\uB3C4",
   loading: "\uB9C8\uC774\uD398\uC774\uC9C0\uB97C \uBD88\uB7EC\uC624\uB294 \uC911\uC774\uC5D0\uC694.",
   loadFailed: "\uB9C8\uC774\uD398\uC774\uC9C0\uB97C \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC5B4\uC694.",
@@ -227,23 +228,26 @@ export default function MyPageScreen({ navigation }) {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          <View style={styles.contentFrame}>
-            <View style={styles.header}>
+          <View style={styles.header}>
+            <View style={styles.headerText}>
               <Text style={styles.title}>{COPY.title}</Text>
-              <TouchableOpacity
-                activeOpacity={0.75}
-                style={styles.bellButton}
-                onPress={() => setNotificationVisible(true)}
-              >
-                <Ionicons
-                  name="notifications-outline"
-                  size={sizes.bell}
-                  color="#FFB36B"
-                />
-                {notificationState.hasUnread && <View style={styles.bellDot} />}
-              </TouchableOpacity>
+              <Text style={styles.subtitle}>{COPY.subtitle}</Text>
             </View>
+            <TouchableOpacity
+              activeOpacity={0.75}
+              style={styles.bellButton}
+              onPress={() => setNotificationVisible(true)}
+            >
+              <Ionicons
+                name="notifications-outline"
+                size={sizes.bell}
+                color="#FFD08E"
+              />
+              {notificationState.hasUnread && <View style={styles.bellDot} />}
+            </TouchableOpacity>
+          </View>
 
+          <View style={styles.contentFrame}>
             <ImageBackground
               source={require("../../assets/images/home_stage.png")}
               style={styles.heroCard}
@@ -412,7 +416,7 @@ const createStyles = (screenWidth, screenHeight, insets) => {
 
   return {
     sizes: {
-      bell: ms(isWide ? 30 : 31),
+      bell: ms(33),
       moon: ms(isWide ? 25 : 23),
       statIcon: ms(isWide ? 16 : 15),
       menuIcon: ms(isWide ? 29 : 27),
@@ -438,27 +442,41 @@ const createStyles = (screenWidth, screenHeight, insets) => {
         width: contentWidth,
       },
       header: {
-        height: vs(isWide ? 50 : 43),
+        alignSelf: "stretch",
         flexDirection: "row",
-        alignItems: "center",
+        alignItems: "flex-start",
         justifyContent: "space-between",
       },
+      headerText: {
+        flex: 1,
+        marginTop: ms(40),
+        paddingLeft: ms(12),
+        paddingRight: ms(8),
+      },
       title: {
-        color: "#F7D8B4",
+        color: "#FFD596",
         fontFamily: "NanumSquareNeo",
-        fontSize: ms(isWide ? 28 : 24),
-        lineHeight: ms(isWide ? 37 : 33),
+        fontSize: ms(16),
+        lineHeight: ms(19),
+      },
+      subtitle: {
+        marginTop: 5,
+        color: "rgba(255, 255, 255, 0.7)",
+        fontFamily: "NanumSquareNeo",
+        fontSize: ms(11),
+        lineHeight: ms(17),
       },
       bellButton: {
-        width: ms(46),
-        height: ms(46),
+        width: ms(52),
+        height: ms(52),
+        marginTop: ms(30),
         alignItems: "center",
         justifyContent: "center",
       },
       bellDot: {
         position: "absolute",
-        right: ms(8),
-        top: ms(7),
+        right: ms(13),
+        top: ms(10),
         width: ms(6),
         height: ms(6),
         borderRadius: ms(5),

@@ -24,11 +24,17 @@ import Svg, {
   Path,
   Rect,
 } from "react-native-svg";
+import NotificationSheet from "../components/NotificationSheet";
 import calendarApi from "../api/calendar-api";
 import castingsApi from "../api/castings-api";
 import recordsApi from "../api/records-api";
 import { useUser } from "../contexts/UserContext";
 import { notifyFavoriteChanged, subscribeFavoriteChanges } from "../services/favoriteState";
+import {
+  getNotificationState,
+  markAllNotificationsRead,
+  subscribeNotificationState,
+} from "../services/notificationState";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const scale = Math.min(Math.max(SCREEN_WIDTH / 393, 0.82), 1.15);
@@ -130,6 +136,10 @@ export default function CalendarScreen({ navigation }) {
   const [selectedRecord, setSelectedRecord] = useState(null);
   const [selectedCasting, setSelectedCasting] = useState(null);
   const [favoriteDates, setFavoriteDates] = useState(() => new Set());
+  const [notificationVisible, setNotificationVisible] = useState(false);
+  const [notificationState, setNotificationState] = useState(() =>
+    getNotificationState()
+  );
   const flip = useRef(new Animated.Value(0)).current;
   const sheetTranslateY = useRef(new Animated.Value(vs(560))).current;
   const yearScrollRef = useRef(null);
@@ -194,6 +204,10 @@ export default function CalendarScreen({ navigation }) {
       }
     : RECORD;
   const calendarReturnTo = useMemo(() => ({ screen: "Calendar" }), []);
+
+  useEffect(() => {
+    return subscribeNotificationState(setNotificationState);
+  }, []);
 
   const loadMonthlyMarkers = useCallback(async (isActive = () => true) => {
     try {
@@ -672,9 +686,18 @@ export default function CalendarScreen({ navigation }) {
               </Text>
             </View>
 
+            <TouchableOpacity
+              activeOpacity={0.75}
+              style={styles.bellButton}
+              onPress={() => setNotificationVisible(true)}
+            >
+              <Ionicons name="notifications-outline" size={ms(33)} color="#FFD08E" />
+              {notificationState.hasUnread && <View style={styles.bellDot} />}
+            </TouchableOpacity>
           </View>
 
-          <Text style={styles.screenTitle}>나의 기록 달력</Text>
+          <View style={styles.contentFrame}>
+            <Text style={styles.screenTitle}>나의 기록 달력</Text>
 
             <View style={styles.calendarCard}>
               <Svg
@@ -899,6 +922,7 @@ export default function CalendarScreen({ navigation }) {
               </TouchableOpacity>
             </View>
           </View>
+          </View>
         </ScrollView>
       </SafeAreaView>
 
@@ -984,6 +1008,12 @@ export default function CalendarScreen({ navigation }) {
           </View>
         </View>
       </Modal>
+      <NotificationSheet
+        visible={notificationVisible}
+        notifications={notificationState.notifications}
+        onClose={() => setNotificationVisible(false)}
+        onMarkAllRead={markAllNotificationsRead}
+      />
     </ImageBackground>
   );
 }
@@ -1248,27 +1278,49 @@ const styles = StyleSheet.create({
   content: {
     paddingHorizontal: ms(36.5),
     paddingBottom: vs(156),
+    alignItems: "center",
+  },
+  contentFrame: {
+    width: "100%",
+    maxWidth: 430,
   },
   header: {
+    alignSelf: "stretch",
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "flex-start",
+    justifyContent: "space-between",
   },
   headerText: {
     flex: 1,
     marginTop: ms(40),
-    marginLeft: ms(-1),
+    paddingLeft: ms(12),
     paddingRight: ms(8),
   },
+  bellButton: {
+    width: ms(52),
+    height: ms(52),
+    marginTop: ms(30),
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  bellDot: {
+    position: "absolute",
+    right: ms(13),
+    top: ms(10),
+    width: ms(6),
+    height: ms(6),
+    borderRadius: ms(5),
+    backgroundColor: "#FF7746",
+  },
   greeting: {
-    color: "#D8AD7B",
+    color: "#FFD596",
     fontFamily: "NanumSquareNeo",
     fontSize: ms(16),
     lineHeight: ms(19),
   },
   subGreeting: {
     marginTop: 5,
-    color: "rgba(219, 160, 174, 0.72)",
+    color: "rgba(255, 255, 255, 0.7)",
     fontFamily: "NanumSquareNeo",
     fontSize: ms(11),
     lineHeight: ms(17),
