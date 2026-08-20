@@ -53,7 +53,7 @@ const getScopedKeys = () => [
 const getPublicState = () => ({
   resultDate: isToday(state.resultDate) ? state.resultDate : null,
   resultReady: isToday(state.resultDate) && hasResultContent(state.resultData),
-  resultNoticeHidden: isToday(state.resultNoticeHiddenDate),
+  resultNoticeHidden: state.resultNoticeHiddenDate === "hidden",
   resultLiked: isToday(state.resultLikedDate),
   resultData: isToday(state.resultDate) ? state.resultData : null,
 });
@@ -74,10 +74,12 @@ function resetMemoryState() {
 
 function applyStoredEntries(entries) {
   const values = Object.fromEntries(entries);
+  const storedNoticeHidden = values[getScopedKey(RESULT_NOTICE_HIDDEN_KEY)];
 
   state.resultDate = values[getScopedKey(RESULT_READY_KEY)] || null;
-  state.resultNoticeHiddenDate =
-    values[getScopedKey(RESULT_NOTICE_HIDDEN_KEY)] || null;
+  state.resultNoticeHiddenDate = storedNoticeHidden
+    ? "hidden"
+    : null;
   state.resultLikedDate = values[getScopedKey(RESULT_LIKED_KEY)] || null;
   state.resultData = parseStoredResult(values[getScopedKey(RESULT_DATA_KEY)]);
 }
@@ -122,7 +124,7 @@ export function setTodayResultReady(value, resultData = null) {
 }
 
 export function setResultNoticeHidden(value) {
-  state.resultNoticeHiddenDate = value ? getTodayDateKey() : null;
+  state.resultNoticeHiddenDate = value ? "hidden" : null;
   const update = value
     ? AsyncStorage.setItem(
         getScopedKey(RESULT_NOTICE_HIDDEN_KEY),

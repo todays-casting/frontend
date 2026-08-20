@@ -56,7 +56,18 @@ function AuthScreenLayout({ navigation, step, title, description, children }) {
   );
 }
 
-function Field({ styles, label, icon, value, onChangeText, placeholder, secureTextEntry, keyboardType, error }) {
+function Field({
+  styles,
+  label,
+  icon,
+  value,
+  onChangeText,
+  placeholder,
+  secureTextEntry,
+  keyboardType,
+  error,
+  onToggleSecureTextEntry,
+}) {
   return (
     <View style={styles.fieldGroup}>
       <Text style={styles.label}>{label}</Text>
@@ -73,6 +84,21 @@ function Field({ styles, label, icon, value, onChangeText, placeholder, secureTe
           autoCapitalize="none"
           autoCorrect={false}
         />
+        {onToggleSecureTextEntry ? (
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={onToggleSecureTextEntry}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel={secureTextEntry ? "비밀번호 보기" : "비밀번호 숨기기"}
+          >
+            <Ionicons
+              name={secureTextEntry ? "eye-off-outline" : "eye-outline"}
+              size={22}
+              color="#756A7C"
+            />
+          </TouchableOpacity>
+        ) : null}
       </View>
     </View>
   );
@@ -139,6 +165,8 @@ export function SignUpStepOneScreen({ navigation }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [passwordConfirm, setPasswordConfirm] = useState("");
+  const [passwordSecure, setPasswordSecure] = useState(true);
+  const [passwordConfirmSecure, setPasswordConfirmSecure] = useState(true);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const trimmedEmail = email.trim();
@@ -184,8 +212,27 @@ export function SignUpStepOneScreen({ navigation }) {
           {showEmailError ? (
             <FeedbackMessage styles={styles}>올바른 이메일을 입력해 주십시오.</FeedbackMessage>
           ) : null}
-          <Field styles={styles} label="비밀번호" icon="lock-closed-outline" value={password} onChangeText={setPassword} placeholder="8자 이상 입력해주세요" secureTextEntry />
-          <Field styles={styles} label="비밀번호 확인" icon="shield-checkmark-outline" value={passwordConfirm} onChangeText={setPasswordConfirm} placeholder="비밀번호를 다시 입력해주세요" secureTextEntry error={passwordConfirm.length > 0 && password !== passwordConfirm} />
+          <Field
+            styles={styles}
+            label="비밀번호"
+            icon="lock-closed-outline"
+            value={password}
+            onChangeText={setPassword}
+            placeholder="8자 이상 입력해주세요"
+            secureTextEntry={passwordSecure}
+            onToggleSecureTextEntry={() => setPasswordSecure((current) => !current)}
+          />
+          <Field
+            styles={styles}
+            label="비밀번호 확인"
+            icon="shield-checkmark-outline"
+            value={passwordConfirm}
+            onChangeText={setPasswordConfirm}
+            placeholder="비밀번호를 다시 입력해주세요"
+            secureTextEntry={passwordConfirmSecure}
+            onToggleSecureTextEntry={() => setPasswordConfirmSecure((current) => !current)}
+            error={passwordConfirm.length > 0 && password !== passwordConfirm}
+          />
           {passwordConfirm.length > 0 && password !== passwordConfirm ? (
             <FeedbackMessage styles={styles}>비밀번호가 일치하지 않습니다.</FeedbackMessage>
           ) : null}
@@ -302,6 +349,8 @@ export function FindPasswordScreen({ navigation }) {
   const [otp, setOtp] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [passwordConfirm, setPasswordConfirm] = useState("");
+  const [newPasswordSecure, setNewPasswordSecure] = useState(true);
+  const [passwordConfirmSecure, setPasswordConfirmSecure] = useState(true);
   const [completed, setCompleted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -395,7 +444,8 @@ export function FindPasswordScreen({ navigation }) {
                 value={newPassword}
                 onChangeText={setNewPassword}
                 placeholder="8자 이상 입력해주세요"
-                secureTextEntry
+                secureTextEntry={newPasswordSecure}
+                onToggleSecureTextEntry={() => setNewPasswordSecure((current) => !current)}
               />
               <Field
                 styles={styles}
@@ -404,7 +454,8 @@ export function FindPasswordScreen({ navigation }) {
                 value={passwordConfirm}
                 onChangeText={setPasswordConfirm}
                 placeholder="새 비밀번호를 다시 입력해주세요"
-                secureTextEntry
+                secureTextEntry={passwordConfirmSecure}
+                onToggleSecureTextEntry={() => setPasswordConfirmSecure((current) => !current)}
                 error={passwordConfirm.length > 0 && newPassword !== passwordConfirm}
               />
               {passwordConfirm.length > 0 && newPassword !== passwordConfirm ? (

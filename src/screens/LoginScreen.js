@@ -88,7 +88,7 @@ export default function LoginScreen({ navigation }) {
       navigation.replace("Main");
     } catch (error) {
       const status = error.response?.status;
-      setErrorMessage(status === 400 || status === 401 || status === 403
+      setErrorMessage([400, 401, 403, 404, 409].includes(status)
         ? COPY.loginFailed
         : error.response?.data?.message ?? COPY.loginFailed
       );
