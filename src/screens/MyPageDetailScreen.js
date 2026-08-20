@@ -22,16 +22,16 @@ import notificationsApi from "../api/notifications-api";
 const COPY = {
   settingsTitle: "\uC54C\uB9BC\uC124\uC815",
   settingsEyebrow: "\uC54C\uB9BC \uD658\uACBD",
-  settingsLead: "\uD558\uB8E8 \uAE30\uB85D\uACFC \uCE90\uC2A4\uD305 \uC18C\uC2DD\uC744 \uB193\uCE58\uC9C0 \uC54A\uB3C4\uB85D \uC54C\uB9BC \uBC29\uC2DD\uC744 \uC870\uC815\uD574\uC694.",
-  recordReminder: "\uAE30\uB85D \uC54C\uB9BC",
-  recordReminderCopy: "\uD558\uB8E8\uB97C \uC815\uB9AC\uD560 \uC2DC\uAC04\uC744 \uC54C\uB824\uC918\uC694.",
+  settingsLead: "\uACB0\uACFC\uAC00 \uC644\uC131\uB418\uBA74 \uBC14\uB85C \uC54C\uB824\uB4DC\uB9AC\uACE0, \uC9C0\uC815\uD55C \uC2DC\uAC04\uC5D0 \uAE30\uB85D\uC774 \uD544\uC694\uD55C \uB0A0\uB9CC \uB9AC\uB9C8\uC778\uB4DC\uD574\uC694.",
+  pushNotification: "\uD478\uC2DC \uC54C\uB9BC",
+  pushNotificationCopy: "\uBAA8\uB4E0 \uC571 \uD478\uC2DC \uC54C\uB9BC\uC744 \uCF1C\uACE0 \uAEBC\uC694.",
+  recordReminder: "\uAE30\uB85D \uB9AC\uB9C8\uC778\uB4DC",
+  recordReminderCopy: "\uC784\uC2DC\uC800\uC7A5 \uC911\uC774\uAC70\uB098 \uC624\uB298 \uAE30\uB85D\uC774 \uC5C6\uC744 \uB54C\uB9CC \uC54C\uB824\uC918\uC694.",
+  resultNotification: "\uACB0\uACFC \uC644\uC131 \uC54C\uB9BC",
+  resultNotificationCopy: "\uC54C\uB9BC \uC2DC\uAC04\uACFC \uAD00\uACC4\uC5C6\uC774 \uCE90\uC2A4\uD305 \uACB0\uACFC\uAC00 \uC900\uBE44\uB418\uBA74 \uBC14\uB85C \uBC1B\uC544\uC694.",
   recordReminderTime: "\uC54C\uB9BC \uC2DC\uAC04",
   recordReminderPlaceholder: "21:30",
   notificationGroup: "\uC54C\uB9BC \uC124\uC815",
-  pushNotification: "\uD478\uC2DC \uC54C\uB9BC",
-  pushNotificationCopy: "\uC911\uC694\uD55C \uAE30\uB85D \uC18C\uC2DD\uC744 \uBC1B\uC544\uC694.",
-  draftNotice: "\uC784\uC2DC\uC800\uC7A5 \uC548\uB0B4",
-  draftNoticeCopy: "\uC800\uC7A5\uB418\uC9C0 \uC54A\uC740 \uAE30\uB85D\uC774 \uC788\uC744 \uB54C \uC54C\uB824\uC918\uC694.",
   timeCancel: "\uCDE8\uC18C",
   timeSave: "\uC801\uC6A9\uD558\uAE30",
   accountTitle: "\uACC4\uC815 \uC124\uC815",
@@ -104,10 +104,16 @@ const normalizeAlertTime = (value) => {
 
 const toApiAlertTime = (value) => `${normalizeAlertTime(value)}:00`;
 
+const normalizeResultNotificationEnabled = (settings, fallback = true) =>
+  settings.resultNotificationEnabled ??
+  settings.resultReadyNotificationEnabled ??
+  settings.castingResultNotificationEnabled ??
+  fallback;
+
 export function SettingsScreen({ navigation }) {
-  const [recordReminder, setRecordReminder] = useState(true);
   const [pushNotification, setPushNotification] = useState(true);
-  const [draftNotice, setDraftNotice] = useState(true);
+  const [recordReminder, setRecordReminder] = useState(true);
+  const [resultNotification, setResultNotification] = useState(true);
   const [alertTime, setAlertTime] = useState("21:30");
   const [draftAlertTime, setDraftAlertTime] = useState("21:30");
   const [timePickerVisible, setTimePickerVisible] = useState(false);
@@ -117,6 +123,7 @@ export function SettingsScreen({ navigation }) {
     pushEnabled: true,
     dailyReminderEnabled: true,
     dailyReminderTime: "21:30",
+    resultNotificationEnabled: true,
     draftNoticeEnabled: true,
   });
   const settingsSaveQueueRef = useRef(Promise.resolve());
@@ -136,14 +143,17 @@ export function SettingsScreen({ navigation }) {
           pushEnabled: Boolean(settings.pushEnabled),
           dailyReminderEnabled: Boolean(settings.dailyReminderEnabled),
           dailyReminderTime: normalizeAlertTime(settings.dailyReminderTime),
-          draftNoticeEnabled: settings.draftNoticeEnabled ?? true,
+          resultNotificationEnabled: Boolean(
+            normalizeResultNotificationEnabled(settings)
+          ),
+          draftNoticeEnabled: true,
         };
 
         settingsRef.current = loadedSettings;
         setPushNotification(loadedSettings.pushEnabled);
         setRecordReminder(loadedSettings.dailyReminderEnabled);
+        setResultNotification(loadedSettings.resultNotificationEnabled);
         setAlertTime(loadedSettings.dailyReminderTime);
-        setDraftNotice(Boolean(loadedSettings.draftNoticeEnabled));
       })
       .catch((error) => {
         console.warn("Failed to load notification settings:", error);
@@ -168,8 +178,8 @@ export function SettingsScreen({ navigation }) {
     settingsRef.current = payload;
     setPushNotification(payload.pushEnabled);
     setRecordReminder(payload.dailyReminderEnabled);
+    setResultNotification(payload.resultNotificationEnabled);
     setAlertTime(normalizeAlertTime(payload.dailyReminderTime));
-    setDraftNotice(Boolean(payload.draftNoticeEnabled));
     pendingSettingsSavesRef.current += 1;
     setSavingSettings(true);
 
@@ -179,6 +189,7 @@ export function SettingsScreen({ navigation }) {
         try {
           const saved = await notificationsApi.updateNotificationSettings({
             ...payload,
+            draftNoticeEnabled: true,
             dailyReminderTime: toApiAlertTime(payload.dailyReminderTime),
           });
 
@@ -189,14 +200,20 @@ export function SettingsScreen({ navigation }) {
               dailyReminderTime: normalizeAlertTime(
                 saved.dailyReminderTime || payload.dailyReminderTime
               ),
-              draftNoticeEnabled: saved.draftNoticeEnabled ?? payload.draftNoticeEnabled,
+              resultNotificationEnabled: Boolean(
+                normalizeResultNotificationEnabled(
+                  saved,
+                  payload.resultNotificationEnabled
+                )
+              ),
+              draftNoticeEnabled: true,
             };
 
             settingsRef.current = savedSettings;
             setPushNotification(savedSettings.pushEnabled);
             setRecordReminder(savedSettings.dailyReminderEnabled);
+            setResultNotification(savedSettings.resultNotificationEnabled);
             setAlertTime(savedSettings.dailyReminderTime);
-            setDraftNotice(Boolean(savedSettings.draftNoticeEnabled));
           }
         } catch (error) {
           console.warn("Failed to update notification settings:", error);
@@ -220,12 +237,12 @@ export function SettingsScreen({ navigation }) {
     saveNotificationSettings({ pushEnabled: value });
   };
 
-  const updateDraftNotice = (value) => {
-    saveNotificationSettings({ draftNoticeEnabled: value });
+  const updateResultNotification = (value) => {
+    saveNotificationSettings({ resultNotificationEnabled: value });
   };
 
   const openTimePicker = () => {
-    if (!recordReminder || settingsDisabled) {
+    if (!pushNotification || !recordReminder || settingsDisabled) {
       return;
     }
 
@@ -261,37 +278,6 @@ export function SettingsScreen({ navigation }) {
       <View style={detailStyles.card}>
         <Text style={detailStyles.groupTitle}>{COPY.notificationGroup}</Text>
 
-        <View style={detailStyles.settingHeader}>
-          <View style={detailStyles.settingTextWrap}>
-            <Text style={detailStyles.rowTitle}>{COPY.recordReminder}</Text>
-            <Text style={detailStyles.rowCopy}>{COPY.recordReminderCopy}</Text>
-          </View>
-          <ToneSwitch
-            value={recordReminder}
-            onValueChange={updateRecordReminder}
-            disabled={settingsDisabled}
-          />
-        </View>
-
-        <TouchableOpacity
-          activeOpacity={0.78}
-          style={[
-            detailStyles.timeInputRow,
-            (!recordReminder || settingsDisabled) && detailStyles.disabledWrap,
-          ]}
-          onPress={openTimePicker}
-          disabled={!recordReminder || settingsDisabled}
-        >
-          <View style={detailStyles.timeLabelRow}>
-            <Ionicons name="time-outline" size={21} color="#FFB36B" />
-            <Text style={detailStyles.timeLabel}>{COPY.recordReminderTime}</Text>
-          </View>
-          <View style={detailStyles.timeValueWrap}>
-            <Text style={detailStyles.timeValue}>{alertTime}</Text>
-            <Ionicons name="chevron-forward" size={18} color="#E8B17C" />
-          </View>
-        </TouchableOpacity>
-
         <SettingRow
           icon="notifications-outline"
           title={COPY.pushNotification}
@@ -304,15 +290,52 @@ export function SettingsScreen({ navigation }) {
             />
           }
         />
+
+        <View style={detailStyles.settingHeader}>
+          <View style={detailStyles.settingTextWrap}>
+            <Text style={detailStyles.rowTitle}>{COPY.recordReminder}</Text>
+            <Text style={detailStyles.rowCopy}>{COPY.recordReminderCopy}</Text>
+          </View>
+          <ToneSwitch
+            value={recordReminder}
+            onValueChange={updateRecordReminder}
+            disabled={!pushNotification || settingsDisabled}
+          />
+        </View>
+
+        <TouchableOpacity
+          activeOpacity={0.78}
+          style={[
+            detailStyles.timeInputRow,
+            (!pushNotification || !recordReminder || settingsDisabled) &&
+              detailStyles.disabledWrap,
+          ]}
+          onPress={openTimePicker}
+          disabled={!pushNotification || !recordReminder || settingsDisabled}
+        >
+          <View style={detailStyles.timeLabelRow}>
+            <Ionicons name="time-outline" size={21} color="#FFB36B" />
+            <Text style={detailStyles.timeLabel}>{COPY.recordReminderTime}</Text>
+          </View>
+          <View style={detailStyles.timeValueWrap}>
+            <Text style={detailStyles.timeValue}>{alertTime}</Text>
+            <Ionicons name="chevron-forward" size={18} color="#E8B17C" />
+          </View>
+        </TouchableOpacity>
+
         <SettingRow
-          icon="save-outline"
-          title={COPY.draftNotice}
-          copy={COPY.draftNoticeCopy}
+          icon="sparkles-outline"
+          title={COPY.resultNotification}
+          copy={
+            pushNotification
+              ? COPY.resultNotificationCopy
+              : "\uD478\uC2DC \uC54C\uB9BC\uC744 \uCF1C\uBA74 \uACB0\uACFC\uAC00 \uC900\uBE44\uB420 \uB54C \uBC14\uB85C \uBC1B\uC544\uC694."
+          }
           right={
             <ToneSwitch
-              value={draftNotice}
-              onValueChange={updateDraftNotice}
-              disabled={settingsDisabled}
+              value={resultNotification}
+              onValueChange={updateResultNotification}
+              disabled={!pushNotification || settingsDisabled}
             />
           }
           last
@@ -907,6 +930,8 @@ const detailStyles = StyleSheet.create({
     lineHeight: 18,
   },
   settingHeader: {
+    marginTop: 14,
+    paddingTop: 6,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",

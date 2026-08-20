@@ -23,12 +23,33 @@ let notificationResponseSubscription = null;
 const formatNotificationTime = (date = new Date()) =>
   `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
 
+const normalizeNotificationType = (data) =>
+  data.notificationType ?? data.type ?? data.event ?? data.kind ?? null;
+
+const getNotificationIcon = (type, fallback) => {
+  if (fallback) {
+    return fallback;
+  }
+
+  if (type === "RECORD_REMINDER" || type === "DAILY_REMINDER") {
+    return "pencil-outline";
+  }
+
+  if (type === "DRAFT_REMINDER") {
+    return "content-save-outline";
+  }
+
+  return "movie-open-star-outline";
+};
+
 const toSheetNotification = (notification) => {
   const content = notification?.request?.content;
   const data = content?.data ?? {};
+  const type = normalizeNotificationType(data);
   const dedupeKey =
     data.dedupeKey ??
-    (data.recordId ? `casting-ready-${data.recordId}` : undefined);
+    (type && data.recordId ? `${type}-${data.recordId}` : undefined) ??
+    (type ? `${type}-${formatNotificationTime()}` : undefined);
 
   return {
     id: dedupeKey ?? notification?.request?.identifier ?? `${Date.now()}`,
@@ -36,9 +57,9 @@ const toSheetNotification = (notification) => {
     title: content?.title ?? "새 알림",
     body: content?.body ?? "",
     time: formatNotificationTime(),
-    icon: data.icon ?? "movie-open-star-outline",
+    icon: getNotificationIcon(type, data.icon),
     unread: true,
-    data: { ...data, dedupeKey },
+    data: { ...data, notificationType: type, dedupeKey },
   };
 };
 
