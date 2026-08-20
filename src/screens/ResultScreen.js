@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   ImageBackground,
+  Modal,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -32,6 +33,7 @@ import castingsApi from "../api/castings-api";
 import mypageApi from "../api/mypage-api";
 import recordsApi from "../api/records-api";
 import { notifyFavoriteChanged, subscribeFavoriteChanges } from "../services/favoriteState";
+import { saveCastingCardDownload } from "../services/cardDownload";
 import { AnalysisLoadingView } from "./AnalysisLoadingScreen";
 import { CastingCardFront } from "./CalendarScreen";
 
@@ -384,6 +386,8 @@ export default function ResultScreen({ navigation, route }) {
   const { styles, sizes } = createStyles(width, height, insets);
   const [todayState, setTodayState] = useState(() => getTodayRecordState());
   const [favoriteSaving, setFavoriteSaving] = useState(false);
+  const [downloadSaving, setDownloadSaving] = useState(false);
+  const [downloadCompleteVisible, setDownloadCompleteVisible] = useState(false);
   const [serverResult, setServerResult] = useState(null);
   const [statusRecordId, setStatusRecordId] = useState(null);
   const [profileName, setProfileName] = useState("");
@@ -651,8 +655,27 @@ export default function ResultScreen({ navigation, route }) {
     navigateToReturnTarget(navigation, returnTo, "Home");
   };
 
-  const downloadCard = () => {
-    Alert.alert("다운로드", "결과 카드 다운로드 기능을 준비 중입니다.");
+  const downloadCard = async () => {
+    if (!currentRecordId || downloadSaving) {
+      return;
+    }
+
+    try {
+      setDownloadSaving(true);
+      const download = await castingsApi.getCastingCardDownload(currentRecordId);
+
+      await saveCastingCardDownload(download);
+      setDownloadCompleteVisible(true);
+    } catch (error) {
+      Alert.alert(
+        "다운로드 실패",
+        error?.response?.data?.message ??
+          error?.message ??
+          "잠시 후 다시 시도해주세요."
+      );
+    } finally {
+      setDownloadSaving(false);
+    }
   };
   const rows = [
     { icon: "movie-open-outline", label: "오늘의 장르", text: result.genre },
@@ -733,15 +756,40 @@ export default function ResultScreen({ navigation, route }) {
 
           <TouchableOpacity
             activeOpacity={0.88}
-            style={styles.downloadButton}
+            style={[styles.downloadButton, downloadSaving && styles.downloadButtonDisabled]}
             onPress={downloadCard}
+            disabled={downloadSaving || !currentRecordId}
           >
             <Ionicons name="download-outline" size={sizes.downloadIcon} color="#FFE1AD" />
-            <Text style={styles.downloadText}>오늘의 카드 다운로드</Text>
+            <Text style={styles.downloadText}>
+              {downloadSaving ? "저장 중..." : "오늘의 카드 다운로드"}
+            </Text>
             <Text style={styles.downloadSparkle}>✦</Text>
           </TouchableOpacity>
         </ScrollView>
       </SafeAreaView>
+
+      <Modal
+        visible={downloadCompleteVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setDownloadCompleteVisible(false)}
+      >
+        <View style={styles.downloadModalOverlay}>
+          <View style={styles.downloadModalCard}>
+            <Text style={styles.downloadModalTitle}>
+              오늘의 카드가 저장되었습니다.
+            </Text>
+            <TouchableOpacity
+              activeOpacity={0.85}
+              style={styles.downloadModalButton}
+              onPress={() => setDownloadCompleteVisible(false)}
+            >
+              <Text style={styles.downloadModalButtonText}>확인했어요</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </ImageBackground>
   );
 }
@@ -851,6 +899,9 @@ const createStyles = (screenWidth, screenHeight, insets) => {
         alignItems: "center",
         justifyContent: "center",
       },
+      downloadButtonDisabled: {
+        opacity: 0.62,
+      },
       downloadText: {
         marginHorizontal: ms(14),
         color: "#FFE1AD",
@@ -862,6 +913,49 @@ const createStyles = (screenWidth, screenHeight, insets) => {
         color: "#FFB36B",
         fontFamily: "MaruBuriSemiBold",
         fontSize: ms(17),
+      },
+      downloadModalOverlay: {
+        flex: 1,
+        paddingHorizontal: ms(22),
+        backgroundColor: "rgba(4, 5, 18, 0.62)",
+        alignItems: "center",
+        justifyContent: "center",
+      },
+      downloadModalCard: {
+        width: "100%",
+        maxWidth: ms(368),
+        minHeight: ms(128),
+        paddingHorizontal: ms(24),
+        paddingTop: ms(31),
+        paddingBottom: ms(20),
+        borderRadius: ms(20),
+        borderWidth: 1,
+        borderColor: "rgba(255, 138, 86, 0.72)",
+        backgroundColor: "rgba(31, 18, 49, 0.98)",
+        alignItems: "center",
+      },
+      downloadModalTitle: {
+        color: "#FFE7C7",
+        fontFamily: "MaruBuriSemiBold",
+        fontSize: ms(18),
+        lineHeight: ms(27),
+        textAlign: "center",
+      },
+      downloadModalButton: {
+        minWidth: ms(132),
+        height: ms(48),
+        marginTop: ms(22),
+        paddingHorizontal: ms(22),
+        borderRadius: ms(24),
+        backgroundColor: "#FF8150",
+        alignItems: "center",
+        justifyContent: "center",
+      },
+      downloadModalButtonText: {
+        color: "#FFFFFF",
+        fontFamily: "NanumSquareNeo",
+        fontSize: ms(15),
+        lineHeight: ms(21),
       },
     }),
   };

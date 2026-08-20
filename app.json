@@ -27,6 +27,13 @@
           "defaultChannel": "default"
         }
       ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "오늘의 캐스팅 카드를 사진 앱에 저장하기 위해 사진 접근 권한이 필요합니다.",
+          "savePhotosPermission": "오늘의 캐스팅 카드를 사진 앱에 저장하기 위해 사진 저장 권한이 필요합니다."
+        }
+      ],
       "expo-web-browser",
       "expo-image"
     ],
