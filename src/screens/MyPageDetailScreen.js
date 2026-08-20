@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
+  Alert,
   ImageBackground,
   Linking,
   Modal,
@@ -50,14 +51,29 @@ const COPY = {
 };
 
 const CONTACT_ROWS = [
-  { icon: "person-circle-outline", label: COPY.accountHelp },
-  { icon: "create-outline", label: COPY.recordHelp },
-  { icon: "albums-outline", label: COPY.cardHelp },
+  {
+    icon: "person-circle-outline",
+    label: COPY.accountHelp,
+    url: "https://forms.gle/3PBdC7i7Zht3FLhj7",
+  },
+  {
+    icon: "create-outline",
+    label: COPY.recordHelp,
+    url: "https://forms.gle/JjURHC8kewarmajn6",
+  },
+  {
+    icon: "albums-outline",
+    label: COPY.cardHelp,
+    url: "https://forms.gle/zCUfxDMXDGhVvC8Z7",
+  },
 ];
 
-const openContactMail = (topic) => {
-  const subject = encodeURIComponent(`[Casting] ${topic}`);
-  Linking.openURL(`mailto:?subject=${subject}`);
+const DEFAULT_CONTACT_FORM_URL = CONTACT_ROWS[0].url;
+
+const openContactForm = (url = DEFAULT_CONTACT_FORM_URL) => {
+  Linking.openURL(url).catch(() => {
+    Alert.alert("문의 폼 열기 실패", "잠시 후 다시 시도해주세요.");
+  });
 };
 
 const HOURS = Array.from({ length: 24 }, (_, index) => index);
@@ -331,7 +347,7 @@ export function ContactScreen({ navigation }) {
             title={item.label}
             right={<Ionicons name="chevron-forward" size={21} color="#E8B17C" />}
             last={index === CONTACT_ROWS.length - 1}
-            onPress={() => openContactMail(item.label)}
+            onPress={() => openContactForm(item.url)}
           />
         ))}
       </View>
@@ -339,7 +355,7 @@ export function ContactScreen({ navigation }) {
       <TouchableOpacity
         activeOpacity={0.86}
         style={detailStyles.primaryButton}
-        onPress={() => openContactMail(COPY.contactTitle)}
+        onPress={openContactForm}
       >
         <Ionicons name="send-outline" size={18} color="#FFFFFF" />
         <Text style={detailStyles.primaryButtonText}>{COPY.send}</Text>
@@ -444,7 +460,10 @@ export function AccountSettingsScreen({ navigation }) {
           title={COPY.withdraw}
           copy={COPY.withdrawCopy}
           right={<Ionicons name="chevron-forward" size={21} color="#E8B17C" />}
-          onPress={() => setWithdrawVisible(true)}
+          onPress={() => {
+            setWithdrawError("");
+            setWithdrawVisible(true);
+          }}
           last
         />
       </View>

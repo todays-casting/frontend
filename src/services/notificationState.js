@@ -69,10 +69,12 @@ export function addNotification(notification) {
 }
 
 export function markAllNotificationsRead() {
-  state.notifications = state.notifications.map((notification) => ({
-    ...notification,
-    unread: false,
-  }));
+  state.notifications = [];
+  notify();
+}
+
+export function clearNotifications() {
+  state.notifications = [];
   notify();
 }
 
